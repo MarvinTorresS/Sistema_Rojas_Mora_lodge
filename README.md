@@ -20,11 +20,26 @@ carpeta de este repositorio.
 - **ORM:** Sequelize
 - **Base de datos:** MySQL 8.4 (Docker)
 - **Frontend:** React + Vite + React Router + axios
+- **Gestor de paquetes:** pnpm (ver sección de seguridad más abajo)
 
 ## Requisitos previos
 
 - Node.js 18 o superior
+- **pnpm** (no npm) — instalarlo una sola vez por máquina: `npm install -g pnpm`
 - Docker Desktop (para levantar MySQL)
+
+## Por qué pnpm y no npm
+
+El registro de npm ha sufrido varios ataques a la cadena de suministro (el más reciente
+conocido como "Shai-Hulud"): un paquete popular es comprometido y, al instalarlo, ejecuta
+código malicioso automáticamente mediante scripts `postinstall`. Esto le puede pasar a
+cualquier gestor que instale desde el mismo registro — pnpm no es inmune al paquete
+malicioso en sí, pero **bloquea por defecto la ejecución automática de esos scripts**,
+que es justo el mecanismo de ataque. Lo dejamos reforzado y explícito en `.npmrc`
+(`ignore-scripts=true`) para que no dependa de la configuración de cada máquina.
+
+Con esto, todo el equipo usa `pnpm install` en vez de `npm install` — **nunca mezclar
+ambos** en el mismo proyecto, porque generan lockfiles distintos e incompatibles.
 
 ## Cómo arrancar el proyecto
 
@@ -50,8 +65,8 @@ los valores de ejemplo ya sirven para desarrollo local).
 
 ```bash
 cd backend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 El backend queda escuchando en `http://localhost:4000`.
@@ -60,8 +75,8 @@ El backend queda escuchando en `http://localhost:4000`.
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 El frontend queda escuchando en `http://localhost:5173` (puerto por defecto de Vite).
@@ -97,3 +112,16 @@ El schema de referencia (versión 4.1, la misma del Avance 1 corregido) está en
 `backend/src/database/schema_referencia.sql`. Las migraciones de Sequelize en
 `backend/src/database/migrations/` son la fuente de verdad para desarrollo; el `.sql`
 queda como snapshot de entrega.
+
+## Buenas prácticas de dependencias (por los ataques recientes a npm)
+
+- Nunca corran `pnpm add <paquete>` de un paquete que no reconozcan sin revisar antes
+  cuántas descargas semanales tiene y cuándo fue su última actualización en
+  [npmjs.com](https://www.npmjs.com).
+- Antes de actualizar una dependencia existente a una versión mayor, revisen el changelog
+  del paquete — no solo confíen en que "compila".
+- Corran `pnpm audit` de vez en cuando para ver si alguna dependencia instalada tiene una
+  vulnerabilidad conocida reportada después de que la instalamos.
+- El archivo `pnpm-lock.yaml` **sí se sube a Git** (no va en `.gitignore`): fija las
+  versiones exactas que todos instalamos, para que a nadie le toque una versión distinta
+  o comprometida sin que el equipo se entere.

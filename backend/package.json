@@ -4,12 +4,13 @@
   "description": "Backend del Sistema de Gestion Integral de Reservas, Pedidos y Facturacion - Rojas Mora Sports & Lodge",
   "main": "src/server.js",
   "type": "commonjs",
+  "packageManager": "pnpm@9.9.0",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "migrate": "npx sequelize-cli db:migrate",
-    "migrate:undo": "npx sequelize-cli db:migrate:undo",
-    "seed": "npx sequelize-cli db:seed:all",
+    "migrate": "pnpm exec sequelize-cli db:migrate",
+    "migrate:undo": "pnpm exec sequelize-cli db:migrate:undo",
+    "seed": "pnpm exec sequelize-cli db:seed:all",
     "test": "jest --runInBand",
     "test:watch": "jest --watch"
   },
