@@ -1,0 +1,26 @@
+# Dependencias
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Variables de entorno (contienen credenciales reales)
+.env
+backend/.env
+frontend/.env
+
+# Build de producción
+frontend/dist/
+frontend/build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema operativo / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Docker
+mysql-data/
