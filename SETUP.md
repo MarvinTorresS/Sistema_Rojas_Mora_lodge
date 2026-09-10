@@ -102,7 +102,43 @@ cd frontend
 pnpm dev
 ```
 
-Vite les va a dar una URL local (normalmente `http://localhost:5173`).
+Vite les va a dar una URL local (normalmente `http://localhost:5173`). El
+`pnpm install` del paso 2 ya trajo todo lo que usa el frontend (Tailwind,
+PostCSS, autoprefixer y `lucide-react`, la librería de íconos) porque es
+un solo workspace de pnpm — no hace falta instalar nada aparte dentro de
+`frontend/`.
+
+### Qué van a ver al abrir `http://localhost:5173`
+
+Ya no es una página en blanco: hay una base construida sobre el prototipo
+**Opción 3 · Por tareas** que el equipo eligió (header verde oscuro +
+Dashboard con 9 tarjetas de tarea). Todavía no tiene lógica real, es la
+plantilla común de la que parte cada módulo:
+
+- **"Registrar reserva"** navega a una pantalla real de selección de
+  espacio (cancha/salón/cabaña/mesa). "Cancha sintética" entra al módulo
+  de Marvin (`pages/ReservasCancha.jsx`, HU-001 a HU-006), que sigue
+  siendo solo plantilla (tabla de ejemplo, sin conectar al backend
+  todavía).
+- **Las otras 8 tarjetas** (y los otros módulos: salón, cabañas,
+  restaurante, usuarios, clientes, facturación, autoservicio, SINPE,
+  disponibilidad, auditoría) muestran una pantalla de "pendiente de
+  implementar" con las HU exactas que le corresponden a cada quien según
+  la matriz de trazabilidad.
+
+**Convención para cuando empiecen su módulo:** creen su propio archivo en
+`frontend/src/pages/` (ej. `ReservasSalon.jsx` para Wagner), siguiendo el
+mismo patrón de `ReservasCancha.jsx`, y reemplacen ÚNICAMENTE el
+`<Route>` de su módulo o tarea en `frontend/src/App.jsx` — no toquen las
+rutas de los demás, para no generar conflictos de Git en ese archivo que
+compartimos los cuatro.
+
+**Hay 3 archivos que van a encontrar en `frontend/src/components/` y que
+ya no se usan** (quedaron de una versión anterior del dashboard, antes de
+simplificarlo a solo navegación por tarjetas): `DevNav.jsx`,
+`Sidebar.jsx` y `PaginaEnConstruccion.jsx`. Se borran en el mismo commit
+que trae esta base — si ya actualizaron su copia local y siguen ahí,
+bórrenlos a mano.
 
 ## Reglas del equipo (para no perder tiempo como ya nos pasó)
 

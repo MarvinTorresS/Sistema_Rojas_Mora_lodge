@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Estilos base compartidos por toda la aplicación. */
+body {
+  @apply bg-surface-alt text-ink font-sans;
+}
