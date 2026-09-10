@@ -32,8 +32,7 @@ app.get('/api/health', (req, res) => {
 // --- Rutas de cada modulo ---
 // Cada integrante monta el router de su modulo aqui, con su propio
 // prefijo. Se agregan a medida que cada sprint las va completando.
-// Ejemplo (Sprint 1 - Marvin):
-// app.use('/api/field-bookings', require('./modules/reservasCancha/reservasCancha.routes'));
+app.use('/api/field-bookings', require('./modules/reservasCancha/reservasCancha.routes'));
 
 // --- Manejo de rutas y errores (siempre al final) ---
 app.use(notFoundHandler);

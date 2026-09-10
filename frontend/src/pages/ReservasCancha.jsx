@@ -1,96 +1,440 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import { createFieldBooking } from '../services/reservasCanchaService';
+import DisponibilidadGrid from '../components/DisponibilidadGrid';
+
 /**
  * Página del módulo "Cancha sintética" (HU-001 a HU-006).
  *
- * Esta es la plantilla base del Sprint 1: la estructura visual del
- * módulo, siguiendo el layout de la Opción 3 del prototipo (panel
- * principal a la izquierda + panel lateral tipo asistente a la derecha).
+ * HU-001 (registrar reserva) ya está implementada: el panel lateral
+ * pasó de ser una plantilla vacía a un formulario real conectado al
+ * backend (POST /api/field-bookings). Las demás historias (listar,
+ * buscar, filtrar, modificar, cancelar — HU-002 a HU-006) siguen
+ * pendientes.
  *
- * A propósito NO tiene todavía:
- *  - useState ni manejo de formulario real.
- *  - Llamadas a services/api.js (eso llega con HU-001 implementada).
- *  - Botones que hagan algo: son solo referencia visual.
- * Los datos de la tabla de abajo son un arreglo fijo (mock), no vienen
- * del backend.
+ * Esta versión reemplaza los campos de hora de texto libre por una
+ * grilla visual de disponibilidad (DisponibilidadGrid.jsx), a pedido de
+ * Marvin, para que el recepcionista vea de un vistazo qué horarios
+ * están libres en vez de escribir una hora y enterarse recién al
+ * enviar si chocaba con otra reserva (CA-2).
  *
  * Sirve como referencia de patrón para Wagner, Kendall y Alison cuando
- * armen sus propias páginas de módulo.
+ * conecten sus propias páginas de módulo a sus HU.
  */
 
-// Datos de ejemplo, solo para tener algo que mostrar en la plantilla.
-// Se reemplazan por datos reales de la API cuando se implemente HU-002.
-const RESERVAS_EJEMPLO = [
-  { id: 1, cliente: 'Luis Vargas Mora', horario: '4:00 p.m. – 5:00 p.m.', estado: 'Confirmada' },
-  { id: 2, cliente: 'Grupo Solano', horario: '6:00 p.m. – 8:00 p.m.', estado: 'Pendiente' },
-];
+// Recurso de ejemplo: en HU-002 (listar) esto debería venir de un
+// GET /api/resources en vez de estar fijo acá. Por ahora, para no
+// bloquear HU-001 esperando ese endpoint (que no existe todavía),
+// se deja fijo el id de la cancha sintética con la que se probó el
+// backend.
+const CANCHA_RESOURCE_ID = 1;
+
+// Horario de operación de la cancha PARA LA GRILLA. Ajustado a pedido
+// de Marvin (1:00 p.m. a 9:00 p.m.) para que, con bloques de 2 horas,
+// entren exactamente 4 slots (1-3pm, 3-5pm, 5-7pm, 7-9pm) y la
+// cuadrícula de 4 columnas quede completa, sin celdas vacías sobrando.
+//
+// Esto es SOLO el rango que pinta la grilla de ejemplo: HU-001 no
+// valida en el backend un horario de apertura/cierre (ver
+// reservasCancha.service.js — se dejó sin esa restricción a pedido de
+// Marvin), así que este cambio no representa todavía una regla de
+// negocio real, solo el horario que muestra esta vista mock. Si el
+// negocio confirma un horario real de operación, debería validarse
+// también en el service, no solo acá.
+const OPENING_HOUR = 13; // 1:00 p.m.
+const CLOSING_HOUR = 21; // 9:00 p.m.
+
+// Duración fija de cada slot de la grilla, a pedido de Marvin (antes
+// eran bloques de 1h). Es una simplificación deliberada para esta
+// versión visual: HU-001 permite cualquier rango de horas, pero la
+// grilla por ahora solo deja ELEGIR un punto de inicio y arma un bloque
+// de 2 horas a partir de ahí. Si el negocio pide reservas de otra
+// duración desde la grilla, esto se vuelve un segundo control (ej.
+// "duración: 1h / 2h / 3h").
+const SLOT_DURATION_HOURS = 2;
+
+// Lista de reservas en memoria del navegador. Empieza vacía (ya no hay
+// datos de ejemplo hardcodeados): las reservas que se creen con el
+// formulario de esta sesión se agregan acá, cada una con SU fecha
+// (campo `date`), para poder filtrar por día. Al recargar la página
+// desaparecen, porque todavía no hay una llamada a GET (HU-002) para
+// traerlas de vuelta del backend.
+const RESERVAS_INICIALES = [];
+
+// yyyy-mm-dd de HOY en horario local (no toISOString, que usa UTC y
+// puede quedar un día adelantado/atrasado según la zona horaria del
+// navegador). Sirve como valor por defecto del selector de fecha y
+// como límite mínimo (no se puede elegir un día ya pasado).
+function todayIsoDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Valor inicial del formulario. selectedHour vive acá también (no es
+// un useState aparte) porque conceptualmente ES un campo más del
+// formulario, aunque se llene haciendo clic en la grilla en vez de
+// tipeando. date arranca en HOY para que la grilla no aparezca vacía
+// de entrada esperando que el usuario elija una fecha.
+const INITIAL_FORM = {
+  customerName: '',
+  customerPhone: '',
+  date: todayIsoDate(),
+  selectedHour: null,
+};
+
+const timeFormatter = new Intl.DateTimeFormat('es-CR', { hour: 'numeric', minute: '2-digit' });
+
+// Formatea el yyyy-mm-dd elegido para mostrarlo legible junto al
+// encabezado de la lista/grilla ("Reservas del día — lun. 15 sep.").
+// Se arma la fecha con año/mes/día sueltos (no `new Date(dateString)`)
+// para evitar el mismo corrimiento de zona horaria que resuelve
+// todayIsoDate(): un string "yyyy-mm-dd" sin hora se interpreta en UTC.
+const dateHeaderFormatter = new Intl.DateTimeFormat('es-CR', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+});
+function formatDateHeader(isoDate) {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return dateHeaderFormatter.format(new Date(year, month - 1, day));
+}
+
+// Arma las columnas de la grilla (una por bloque de SLOT_DURATION_HOURS
+// dentro del horario de operación) para UN día específico, a partir de
+// las reservas ya filtradas a ese mismo día (ver el filtro por
+// `formData.date` en el componente). El incremento del bucle usa
+// SLOT_DURATION_HOURS (no 1 fijo) a propósito: con bloques de 2 horas,
+// avanzar de 1 en 1 generaría slots que se pisan entre sí (1-3pm y
+// 2-4pm compartirían la hora 2-3pm), lo cual no tiene sentido para una
+// grilla de horarios que no se superponen.
+//
+// `date` se recibe aparte (no alcanza con mirar las reservas) porque
+// hace falta para decidir si ESTE día es hoy, y en ese caso poder
+// marcar como 'past' los slots cuya hora de inicio ya pasó — no tendría
+// sentido dejar que el recepcionista intente reservar una hora de hoy
+// que ya quedó atrás.
+//
+// Es una función PURA (mismos argumentos -> mismo resultado, sin tocar
+// nada externo) a propósito: eso permite probarla con un test unitario
+// simple si hace falta más adelante, sin tener que renderizar el
+// componente completo.
+function buildSlotsFromReservations(reservations, date) {
+  const slots = [];
+  const isToday = date === todayIsoDate();
+  const currentHour = new Date().getHours();
+
+  for (let hour = OPENING_HOUR; hour < CLOSING_HOUR; hour += SLOT_DURATION_HOURS) {
+    const reservation = reservations.find((r) => r.hour === hour);
+    const hourLabel = timeFormatter.format(new Date(2000, 0, 1, hour));
+
+    if (reservation) {
+      slots.push({
+        hour,
+        hourLabel,
+        status: reservation.estado === 'Pendiente' ? 'pending' : 'occupied',
+        clientName: reservation.cliente,
+      });
+    } else if (isToday && hour <= currentHour) {
+      slots.push({ hour, hourLabel, status: 'past' });
+    } else {
+      slots.push({ hour, hourLabel, status: 'available' });
+    }
+  }
+  return slots;
+}
+
+// Convierte una hora entera (ej. 18) + una fecha (yyyy-mm-dd) en el par
+// startDatetime/endDatetime ISO que espera el backend, usando la
+// duración fija del slot.
+function slotToIsoRange(date, hour) {
+  const start = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00`);
+  const end = new Date(start.getTime() + SLOT_DURATION_HOURS * 60 * 60 * 1000);
+  return { startDatetime: start.toISOString(), endDatetime: end.toISOString() };
+}
 
 function ReservasCancha() {
+  const [formData, setFormData] = useState(INITIAL_FORM);
+  const [reservas, setReservas] = useState(RESERVAS_INICIALES);
+  // feedback agrupa estado + mensaje en un solo objeto porque siempre
+  // cambian juntos (nunca hay un mensaje de error "idle", ni un estado
+  // 'error' sin mensaje) — separarlos en dos variables sueltas
+  // permitiría estados inconsistentes a mitad de una actualización.
+  const [feedback, setFeedback] = useState({ status: 'idle', message: '' });
+
+  // Solo las reservas del día elegido alimentan la grilla: sin este
+  // filtro, una reserva del 15 seguiría marcando esa hora como ocupada
+  // aunque el recepcionista esté viendo el día 20.
+  const reservasDelDia = reservas.filter((r) => r.date === formData.date);
+  const slots = buildSlotsFromReservations(reservasDelDia, formData.date);
+
+  function handleChange(event) {
+    const { name, value } = event.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+      // Al cambiar de fecha, la hora elegida en la grilla anterior deja
+      // de tener sentido (puede que ya ni siquiera exista como slot
+      // disponible en el nuevo día) — se limpia para no enviar una
+      // reserva con la fecha nueva pero la hora de otro día.
+      ...(name === 'date' ? { selectedHour: null } : {}),
+    }));
+  }
+
+  function handleSelectSlot(hour) {
+    setFormData((prev) => ({ ...prev, selectedHour: hour }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (formData.selectedHour === null) {
+      setFeedback({ status: 'error', message: 'Elegí un horario disponible en la cuadrícula.' });
+      return;
+    }
+
+    setFeedback({ status: 'loading', message: '' });
+
+    try {
+      const { startDatetime, endDatetime } = slotToIsoRange(formData.date, formData.selectedHour);
+      const booking = await createFieldBooking({
+        resourceId: CANCHA_RESOURCE_ID,
+        customerName: formData.customerName,
+        customerPhone: formData.customerPhone,
+        startDatetime,
+        endDatetime,
+      });
+
+      // Se agrega a la misma lista que alimenta la grilla y el panel
+      // "Reservas del día": booking.bookingId es el id real que asignó
+      // MySQL, así que a partir de acá ya no es un dato mock.
+      setReservas((prev) => [
+        ...prev,
+        {
+          id: booking.bookingId,
+          cliente: formData.customerName,
+          date: formData.date,
+          hour: formData.selectedHour,
+          estado: 'Confirmada',
+        },
+      ]);
+      setFormData(INITIAL_FORM);
+      setFeedback({ status: 'success', message: 'Reserva registrada correctamente.' });
+    } catch (error) {
+      // error.message ya viene traducido por reservasCanchaService.js
+      // a partir de los criterios de aceptación CA-2 a CA-5 (conflicto
+      // de horario, demasiada anticipación, etc.) — no hace falta
+      // interpretar códigos HTTP acá.
+      setFeedback({ status: 'error', message: error.message });
+    }
+  }
+
+  // CA-6 "Cancelación del registro": no hace falta lógica de backend,
+  // solo descartar lo escrito y volver al formulario vacío.
+  function handleCancel() {
+    setFormData(INITIAL_FORM);
+    setFeedback({ status: 'idle', message: '' });
+  }
+
+  const isSubmitting = feedback.status === 'loading';
+
   return (
-    <div className="flex flex-col gap-6 lg:flex-row">
-      {/* Panel principal */}
-      <div className="flex-1 space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-display text-2xl font-semibold text-primary-900">
-              Cancha sintética
-            </h2>
-            <p className="text-sm text-muted">
-              Abierta de 4:00 p.m. a 10:00 p.m. · tarifa ₡8.000 por hora
-            </p>
-          </div>
-          {/* Botón sin acción todavía — se conecta cuando se implemente HU-001 */}
-          <button
-            type="button"
-            className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white opacity-60"
-            disabled
-            title="Pendiente de implementar (HU-001)"
+    // w-full + p-6: antes esta página no tenía padding propio ni ancho
+    // explícito, así que quedaba con su ancho de contenido natural
+    // dentro del <main> (que sí ocupa toda la pantalla, ver Layout.jsx)
+    // — de ahí la franja vacía a la derecha que señaló Marvin. El
+    // padding lateral es a propósito consistente en los 3 bloques
+    // (lista, grilla, formulario) para que no vuelva a aparecer un
+    // borde "pegado" a un lado y espacio del otro.
+    // h-full en la raíz + flex-col: antes esta página solo definía su
+    // alto por el contenido (título + una fila de tarjetas de ~180px),
+    // así que sobraba todo el resto del viewport como franja vacía
+    // debajo — el mismo problema que el ancho, pero en el otro eje.
+    // Al declarar h-full acá y flex-1 en el bloque lista+grilla más
+    // abajo, ese bloque ahora reclama TODO el alto disponible del
+    // <main> (que si ocupa la pantalla completa, ver Layout.jsx) y se
+    // lo reparte con la grilla, en vez de quedar flotando arriba.
+    <div className="flex h-full w-full flex-col gap-6 p-6 lg:flex-row">
+      {/* Panel principal: lista del día + grilla de disponibilidad */}
+      <div className="flex min-w-0 flex-[3] flex-col gap-6">
+        <div>
+          {/* Vuelve a "Elegir espacio" (SeleccionarEspacio.jsx en
+              /reservar), no al dashboard: es la pantalla anterior real
+              en el flujo de "Registrar reserva" (ver App.jsx). Antes
+              esta página no tenía forma de regresar salvo con el botón
+              "atrás" del navegador. */}
+          <Link
+            to="/reservar"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink"
           >
-            Registrar reserva
-          </button>
+            <ArrowLeft size={15} />
+            Volver a elegir espacio
+          </Link>
+          <h2 className="mt-3 font-display text-2xl font-semibold text-primary-900">
+            Cancha sintética
+          </h2>
+          <p className="text-sm text-muted">
+            Abierta de 1:00 p.m. a 9:00 p.m. · tarifa ₡8.000 por hora
+          </p>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-card">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-surface-alt text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3">Cliente</th>
-                <th className="px-4 py-3">Horario</th>
-                <th className="px-4 py-3">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {RESERVAS_EJEMPLO.map((reserva) => (
-                <tr key={reserva.id} className="border-t border-line">
-                  <td className="px-4 py-3">{reserva.cliente}</td>
-                  <td className="px-4 py-3">{reserva.horario}</td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-800">
-                      {reserva.estado}
+        <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
+          {/* Lista lateral "Reservas del día" — resumen en texto de lo
+              mismo que ya se ve pintado en la grilla, para quien
+              prefiera leer una lista en vez de escanear colores.
+              Antes tenía un ancho fijo angosto (lg:w-56); ahora usa
+              una proporción del espacio disponible (flex-1 de 4, la
+              grilla flex-[3]) para que crezca junto con la pantalla en
+              vez de dejar hueco a su lado. overflow-y-auto: si algún
+              día hay muchas reservas en un día, esta lista scrollea en
+              vez de estirar la tarjeta más que la grilla de al lado. */}
+          <aside className="w-full shrink-0 overflow-y-auto rounded-xl border border-line bg-surface p-4 shadow-card lg:w-auto lg:flex-1">
+            <h3 className="font-display text-sm font-semibold text-primary-900">
+              Reservas del día
+            </h3>
+            <p className="text-xs text-muted">{formatDateHeader(formData.date)}</p>
+            <ul className="mt-3 space-y-3">
+              {slots
+                .filter((s) => s.status === 'occupied' || s.status === 'pending')
+                .map((s) => (
+                  <li key={s.hour} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
+                    <p className="text-sm font-medium text-ink">{s.clientName}</p>
+                    <p className="text-xs text-faint">{s.hourLabel}</p>
+                    <span
+                      className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        s.status === 'occupied' ? 'bg-primary-50 text-primary-800' : 'bg-amber-50 text-amber-600'
+                      }`}
+                    >
+                      {s.status === 'occupied' ? 'Confirmada' : 'Pendiente'}
                     </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </li>
+                ))}
+              {slots.every((s) => s.status !== 'occupied' && s.status !== 'pending') && (
+                <li className="text-xs text-faint">Sin reservas registradas para este día.</li>
+              )}
+            </ul>
+          </aside>
+
+          {/* flex + h-full: DisponibilidadGrid ahora se estira para
+              llenar el alto disponible de este bloque (ver comentario
+              arriba), no solo el ancho — así el fondo con la foto real
+              cubre el espacio real de la pantalla en vez de quedar
+              como una franja angosta con vacío debajo. */}
+          <div className="flex min-w-0 flex-[3] flex-col">
+            <DisponibilidadGrid
+              slots={slots}
+              onSelectSlot={handleSelectSlot}
+              selectedHour={formData.selectedHour}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Panel lateral — referencia visual del "asistente" del prototipo.
-          Todavía no tiene pasos reales ni formulario: es solo el molde. */}
+      {/* Panel lateral — formulario real de HU-001, reubicado como
+          panel flotante crema sobre el fondo de la página. Ancho fijo
+          (w-80) a propósito, a diferencia de los otros dos bloques: un
+          formulario no debería estirarse con la pantalla — inputs
+          demasiado anchos son más difíciles de leer, no más útiles. */}
       <aside className="w-full shrink-0 rounded-xl border border-line bg-surface p-5 shadow-card lg:w-80">
         <h3 className="font-display text-base font-semibold text-primary-900">
           Nueva reserva
         </h3>
-        <p className="mt-1 text-xs text-muted">Plantilla del panel — sin lógica todavía</p>
+        <p className="mt-1 text-xs text-muted">Cancha sintética</p>
 
-        <div className="mt-4 flex gap-1">
-          {[1, 2, 3, 4].map((paso) => (
-            <span key={paso} className="h-1.5 flex-1 rounded-full bg-primary-100" />
-          ))}
-        </div>
+        <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+          <div>
+            <label htmlFor="customerName" className="block text-xs font-medium text-muted">
+              Nombre del cliente
+            </label>
+            <input
+              id="customerName"
+              name="customerName"
+              type="text"
+              required
+              minLength={3}
+              value={formData.customerName}
+              onChange={handleChange}
+              className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm focus:border-primary-400 focus:outline-none"
+              placeholder="Ej. Luis Vargas Mora"
+            />
+          </div>
 
-        <div className="mt-5 rounded-lg border border-dashed border-line p-4 text-center text-xs text-faint">
-          Acá va el formulario/flujo de la reserva (HU-001), cuando se implemente.
-        </div>
+          <div>
+            <label htmlFor="customerPhone" className="block text-xs font-medium text-muted">
+              Teléfono
+            </label>
+            <input
+              id="customerPhone"
+              name="customerPhone"
+              type="tel"
+              required
+              minLength={8}
+              value={formData.customerPhone}
+              onChange={handleChange}
+              className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm focus:border-primary-400 focus:outline-none"
+              placeholder="Ej. 8888-7777"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="date" className="block text-xs font-medium text-muted">
+              Fecha
+            </label>
+            <input
+              id="date"
+              name="date"
+              type="date"
+              required
+              min={todayIsoDate()}
+              value={formData.date}
+              onChange={handleChange}
+              className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm focus:border-primary-400 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <span className="block text-xs font-medium text-muted">Horario elegido</span>
+            <p className="mt-1 rounded-lg border border-dashed border-line bg-surface-alt px-3 py-2 text-sm text-ink">
+              {formData.selectedHour !== null
+                ? `${timeFormatter.format(new Date(2000, 0, 1, formData.selectedHour))} – ${timeFormatter.format(
+                    new Date(2000, 0, 1, formData.selectedHour + SLOT_DURATION_HOURS),
+                  )}`
+                : 'Elegí una celda disponible en la cuadrícula →'}
+            </p>
+          </div>
+
+          {feedback.status === 'error' && (
+            <p className="rounded-lg bg-coral-50 px-3 py-2 text-xs text-coral-600">
+              {feedback.message}
+            </p>
+          )}
+          {feedback.status === 'success' && (
+            <p className="rounded-lg bg-teal-50 px-3 py-2 text-xs text-teal-600">
+              {feedback.message}
+            </p>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-800 disabled:opacity-60"
+            >
+              {isSubmitting ? 'Guardando…' : 'Registrar reserva'}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={isSubmitting}
+              className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-surface-alt disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
       </aside>
     </div>
   );

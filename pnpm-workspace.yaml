@@ -6,5 +6,8 @@ packages:
 # que son legitimos y necesarios (ver README.md, seccion de seguridad).
 # NUNCA agregar un paquete aqui sin revisarlo primero.
 allowBuilds:
-  bcrypt: true    # compila su binario nativo, lo usamos para hashear contrasenas
-  esbuild: true   # dependencia interna de Vite, compila su propio binario
+  bcrypt: true # compila su binario nativo, lo usamos para hashear contrasenas
+  esbuild: true # dependencia interna de Vite, compila su propio binario
+
+minimumReleaseAgeExclude:
+  - lucide-react@1.44.0
