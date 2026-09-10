@@ -44,3 +44,31 @@ export async function createFieldBooking(payload) {
     throw friendlyError;
   }
 }
+
+/**
+ * HU-002 — Consultar el listado de reservas registradas de la cancha.
+ *
+ * Todos los filtros son opcionales; si no se pasan, el backend devuelve
+ * la primera página con su tamaño por defecto.
+ *
+ * @param {{ date?: string, status?: string, page?: number, pageSize?: number }} [params]
+ *   `date` en formato yyyy-mm-dd.
+ * @returns {Promise<{ data: object[], meta: { page:number, pageSize:number, total:number, totalPages:number } }>}
+ * @throws {Error} con `.message` listo para mostrar y `.status` (código HTTP).
+ */
+export async function listFieldBookings(params = {}) {
+  try {
+    // axios omite del query string los params con valor undefined, así
+    // que no hace falta filtrarlos a mano acá.
+    const response = await api.get(BASE_PATH, { params });
+    return response.data;
+  } catch (error) {
+    const backendError = error.response?.data?.error;
+    const friendlyError = new Error(
+      backendError?.message ?? 'No se pudo cargar el listado de reservas. Intentá de nuevo.',
+    );
+    friendlyError.details = backendError?.details;
+    friendlyError.status = error.response?.status;
+    throw friendlyError;
+  }
+}

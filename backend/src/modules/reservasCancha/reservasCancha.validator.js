@@ -12,7 +12,12 @@
 // responsabilidad exclusiva del service (ver reservasCancha.service.js),
 // porque para responderlas hace falta consultar la base de datos, y el
 // validator no deberia hacer eso.
-const { body, validationResult } = require('express-validator');
+const { body, query, validationResult } = require('express-validator');
+
+// Estados de reserva validos para el filtro opcional de HU-002. Misma
+// lista que el ENUM de booking.model.js; se repite aqui (y no se importa
+// del service) para que el validator no dependa de la capa de negocio.
+const BOOKING_STATUSES = ['pending', 'active', 'rejected', 'checked_in', 'completed', 'cancelled'];
 
 // Middleware generico que revisa si express-validator encontro errores
 // en las reglas declaradas antes de el, y si los hay corta la cadena
@@ -62,7 +67,42 @@ const createBookingRules = [
   handleValidationErrors,
 ];
 
+// Reglas para HU-002 (GET /api/field-bookings): listar reservas.
+// Los cuatro parametros son OPCIONALES y viajan en el query string; si
+// no vienen, el service usa sus valores por defecto. Solo se valida la
+// FORMA: que la fecha sea una fecha, que el estado sea uno conocido,
+// que page/pageSize sean enteros dentro de rango. El filtrado real y la
+// paginacion los hace el service.
+const listBookingsRules = [
+  query('date')
+    .optional()
+    // strictMode: exige EXACTAMENTE el formato yyyy-mm-dd y ademas que
+    // sea una fecha real (rechaza 2026-13-45, 2026-02-30, etc.), a
+    // diferencia de una regex de forma que dejaria pasar meses/dias
+    // imposibles.
+    .isDate({ format: 'YYYY-MM-DD', strictMode: true })
+    .withMessage('date debe ser una fecha valida con formato yyyy-mm-dd.'),
+
+  query('status')
+    .optional()
+    .isIn(BOOKING_STATUSES)
+    .withMessage('status no corresponde a un estado de reserva valido.'),
+
+  query('page')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('page debe ser un entero mayor o igual a 1.'),
+
+  query('pageSize')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('pageSize debe ser un entero entre 1 y 100.'),
+
+  handleValidationErrors,
+];
+
 module.exports = {
   createBookingRules,
+  listBookingsRules,
   handleValidationErrors,
 };

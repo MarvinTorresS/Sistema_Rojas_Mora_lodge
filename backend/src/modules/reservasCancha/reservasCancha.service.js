@@ -25,6 +25,19 @@ const FIELD_RESOURCE_TYPE = 'field';
 // libero el horario y no debe bloquear una reserva nueva.
 const ACTIVE_BOOKING_STATUSES = ['pending', 'active', 'checked_in'];
 
+// Todos los estados que un Booking puede tener (mismos valores que el
+// ENUM de booking.model.js). Se usa en HU-002 para validar el filtro
+// opcional por estado: si llega un valor fuera de esta lista, es un
+// error de forma del cliente, no una consulta vacia legitima.
+const BOOKING_STATUSES = ['pending', 'active', 'rejected', 'checked_in', 'completed', 'cancelled'];
+
+// HU-002 (paginacion): valores por defecto y tope del tamano de pagina.
+// El tope evita que un cliente pida "traeme 100000 reservas" y tumbe la
+// respuesta; es una constante (no un numero suelto) por la misma razon
+// que MAX_ADVANCE_BOOKING_DAYS.
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
 // Error de dominio con codigo HTTP adjunto. El controller lee
 // `error.statusCode` para decidir la respuesta, sin tener que repetir
 // esa decision (¿es 404? ¿409? ¿422?) en cada catch.
@@ -158,16 +171,139 @@ async function createFieldBooking(payload) {
   return booking;
 }
 
+// ---------------------------------------------------------------------
+// HU-002 — Consultar el listado de reservas registradas de la cancha
+// sintetica. (Wagner)
+// ---------------------------------------------------------------------
+
+// yyyy-mm-dd -> [inicio, dia siguiente) en HORA LOCAL. Se arma con
+// componentes sueltos (new Date(y, m-1, d)) y no con new Date("yyyy-mm-dd"),
+// porque este ultimo interpreta el string en UTC y, segun la zona
+// horaria, "el dia 15" podria arrancar a las 6 p.m. del 14. El rango es
+// semiabierto [inicio, fin) para que una reserva que arranca justo a
+// medianoche del dia siguiente NO cuente como del dia consultado.
+function localDayRange(isoDate) {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return {
+    start: new Date(year, month - 1, day, 0, 0, 0, 0),
+    end: new Date(year, month - 1, day + 1, 0, 0, 0, 0),
+  };
+}
+
+// Pura: arma el objeto `where` de Booking para el listado, a partir de
+// los filtros opcionales ya validados EN SU FORMA por el validator
+// (date con formato yyyy-mm-dd, status string). Aqui se valida el
+// unico aspecto que el validator no puede: que `status`, si viene, sea
+// realmente uno de los estados que el modelo admite. Se separa del
+// acceso a BD para poder probarla con Jest sin levantar MySQL.
+function buildListBookingsWhere({ date, status } = {}) {
+  const where = {};
+
+  if (status !== undefined && status !== null && status !== '') {
+    if (!BOOKING_STATUSES.includes(status)) {
+      throw new DomainError(`Estado de reserva no valido: ${status}.`, 422);
+    }
+    where.status = status;
+  }
+
+  if (date) {
+    const { start, end } = localDayRange(date);
+    where.startDatetime = { [Op.gte]: start, [Op.lt]: end };
+  }
+
+  return where;
+}
+
+// Pura: normaliza los parametros de paginacion que llegan como texto en
+// el query string (?page=2&pageSize=5). Cualquier valor ausente,
+// no numerico o fuera de rango cae a un valor seguro en vez de
+// reventar: un listado nunca deberia fallar por un query string raro,
+// como mucho ignora el parametro.
+function normalizePagination({ page, pageSize } = {}) {
+  const parsedPage = Number.parseInt(page, 10);
+  const parsedSize = Number.parseInt(pageSize, 10);
+
+  const safePage = Number.isInteger(parsedPage) && parsedPage >= 1 ? parsedPage : 1;
+  const safeSize = Number.isInteger(parsedSize) && parsedSize >= 1
+    ? Math.min(parsedSize, MAX_PAGE_SIZE)
+    : DEFAULT_PAGE_SIZE;
+
+  return { page: safePage, pageSize: safeSize, limit: safeSize, offset: (safePage - 1) * safeSize };
+}
+
+// Aplana una fila de Booking (instancia Sequelize o ya objeto plano) a
+// la forma minima que necesita el frontend: los datos de la reserva
+// mas el nombre/telefono del cliente y el nombre de la cancha, sin
+// exponer columnas internas ni el objeto Sequelize completo.
+function mapBookingRow(booking) {
+  const row = typeof booking.get === 'function' ? booking.get({ plain: true }) : booking;
+  return {
+    bookingId: row.bookingId,
+    status: row.status,
+    originChannel: row.originChannel,
+    startDatetime: row.startDatetime,
+    endDatetime: row.endDatetime,
+    resource: row.resource ? { resourceId: row.resource.resourceId, name: row.resource.name } : null,
+    customer: row.customer
+      ? { customerId: row.customer.customerId, fullName: row.customer.fullName, phone: row.customer.phone }
+      : null,
+  };
+}
+
+// HU-002 — CA-1 (visualizacion del listado) y CA-2 (sin reservas:
+// items = [] y total = 0, no un error). CA-3 "Acceso sin permisos" NO
+// se resuelve aqui: corresponde a un middleware de autenticacion/roles
+// en la capa de routes, que todavia no existe (llega con el modulo de
+// usuarios, Sprint 5). Ver el TODO en reservasCancha.routes.js.
+async function listFieldBookings(query = {}) {
+  const where = buildListBookingsWhere(query);
+  const { page, pageSize, limit, offset } = normalizePagination(query);
+
+  const { rows, count } = await Booking.findAndCountAll({
+    where,
+    include: [
+      // required: true => INNER JOIN. Booking es una tabla generica
+      // (sirve para cabana/salon/mesa tambien): sin este filtro el
+      // modulo de cancha listaria reservas que no le corresponden.
+      {
+        model: Resource,
+        as: 'resource',
+        where: { resourceType: FIELD_RESOURCE_TYPE },
+        required: true,
+      },
+      { model: Customer, as: 'customer', required: false },
+    ],
+    order: [['startDatetime', 'ASC']],
+    limit,
+    offset,
+    // distinct: con include, sin esto el count contaria filas del JOIN
+    // en vez de reservas.
+    distinct: true,
+  });
+
+  return {
+    items: rows.map(mapBookingRow),
+    page,
+    pageSize,
+    total: count,
+    totalPages: pageSize > 0 ? Math.ceil(count / pageSize) : 0,
+  };
+}
+
 module.exports = {
   DomainError,
   MAX_ADVANCE_BOOKING_DAYS,
+  BOOKING_STATUSES,
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
   rangesOverlap,
   createFieldBooking,
 
-  // TODO (Wagner — HU-002, CA-1/CA-2/CA-3): listFieldBookings(filters)
-  // Listado paginado de reservas de esta cancha. CA-3 "Acceso sin
-  // permisos" probablemente se resuelve con un middleware de
-  // autenticacion/roles en la capa de routes, no aqui.
+  // HU-002 (Wagner)
+  buildListBookingsWhere,
+  normalizePagination,
+  mapBookingRow,
+  listFieldBookings,
 
   // TODO (Kendall — HU-003, CA-1/CA-2): searchFieldBookings({ customerName, phone, date })
   // Busqueda por cliente, telefono o fecha exacta.

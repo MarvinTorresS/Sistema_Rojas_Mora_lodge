@@ -13,15 +13,19 @@
 // frontend/src/App.jsx).
 const express = require('express');
 const controller = require('./reservasCancha.controller');
-const { createBookingRules } = require('./reservasCancha.validator');
+const { createBookingRules, listBookingsRules } = require('./reservasCancha.validator');
 
 const router = express.Router();
 
 // HU-001 (Marvin) — Registrar una nueva reserva de cancha sintetica.
 router.post('/', createBookingRules, controller.createBooking);
 
-// TODO (Wagner — HU-002): listar reservas registradas.
-// router.get('/', listBookingsRules, controller.listBookings);
+// HU-002 (Wagner) — Consultar el listado de reservas registradas de la
+// cancha. Filtros opcionales por query string: ?date=yyyy-mm-dd&status=&page=&pageSize=.
+// TODO (Sprint 5, modulo usuariosSeguridad): anteponer authMiddleware +
+// roleMiddleware aqui para cubrir CA-3 "Acceso sin permisos"; ese
+// middleware todavia no existe en el proyecto.
+router.get('/', listBookingsRules, controller.listBookings);
 
 // TODO (Kendall — HU-003): buscar por cliente, telefono o fecha.
 // router.get('/search', searchBookingsRules, controller.searchBookings);

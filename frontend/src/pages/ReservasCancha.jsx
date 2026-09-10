@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { createFieldBooking } from '../services/reservasCanchaService';
+import { createFieldBooking, listFieldBookings } from '../services/reservasCanchaService';
 import DisponibilidadGrid from '../components/DisponibilidadGrid';
 
 /**
@@ -54,13 +54,50 @@ const CLOSING_HOUR = 21; // 9:00 p.m.
 // "duración: 1h / 2h / 3h").
 const SLOT_DURATION_HOURS = 2;
 
-// Lista de reservas en memoria del navegador. Empieza vacía (ya no hay
-// datos de ejemplo hardcodeados): las reservas que se creen con el
-// formulario de esta sesión se agregan acá, cada una con SU fecha
-// (campo `date`), para poder filtrar por día. Al recargar la página
-// desaparecen, porque todavía no hay una llamada a GET (HU-002) para
-// traerlas de vuelta del backend.
+// Lista de reservas que alimenta la grilla y el panel "Reservas del
+// día". HU-002 la conectó al backend: se carga con listFieldBookings()
+// cada vez que cambia la fecha elegida (ver loadReservas en el
+// componente) y se vuelve a pedir después de crear una. Arranca vacía
+// mientras llega la primera respuesta.
 const RESERVAS_INICIALES = [];
+
+// Estados de reserva que efectivamente OCUPAN un horario en la grilla.
+// Son los mismos que ACTIVE_BOOKING_STATUSES del backend
+// (reservasCancha.service.js): una reserva 'cancelled' o 'rejected' ya
+// liberó el horario y no debe pintar el slot como ocupado, y una
+// 'completed' ya pasó. HU-002 trae TODAS las reservas del día; el filtro
+// por estado para verlas todas es HU-004.
+const SLOT_HOLDING_STATUSES = ['pending', 'active', 'checked_in'];
+
+// yyyy-mm-dd (hora local) del inicio de una reserva que viene del
+// backend en ISO/UTC. Mismo cuidado con la zona horaria que
+// todayIsoDate(): se leen los componentes locales del Date, nunca se
+// corta el string ISO (que está en UTC).
+function isoToLocalDate(isoString) {
+  const d = new Date(isoString);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Traduce una reserva tal como la devuelve el backend en HU-002
+// ({ bookingId, status, startDatetime, customer: { fullName }, ... }) a
+// la forma mínima que ya consumían la grilla y la lista lateral
+// ({ id, cliente, date, hour, estado }), para no tener que tocar el
+// resto del componente al pasar de datos en memoria a datos reales.
+function mapBackendBookingToRow(booking) {
+  return {
+    id: booking.bookingId,
+    cliente: booking.customer?.fullName ?? 'Sin nombre',
+    date: isoToLocalDate(booking.startDatetime),
+    hour: new Date(booking.startDatetime).getHours(),
+    // Solo llegan acá reservas con estado que ocupa el horario (ver
+    // SLOT_HOLDING_STATUSES): 'pending' son solicitudes web sin aprobar;
+    // 'active'/'checked_in' ya están confirmadas.
+    estado: booking.status === 'pending' ? 'Pendiente' : 'Confirmada',
+  };
+}
 
 // yyyy-mm-dd de HOY en horario local (no toISOString, que usa UTC y
 // puede quedar un día adelantado/atrasado según la zona horaria del
@@ -164,6 +201,33 @@ function ReservasCancha() {
   // 'error' sin mensaje) — separarlos en dos variables sueltas
   // permitiría estados inconsistentes a mitad de una actualización.
   const [feedback, setFeedback] = useState({ status: 'idle', message: '' });
+  // Estado de la carga del listado (HU-002), separado del feedback del
+  // formulario: leer y crear son dos operaciones distintas y pueden
+  // estar en estados diferentes a la vez.
+  const [listState, setListState] = useState({ status: 'loading', message: '' });
+
+  // Trae del backend las reservas del día elegido. useCallback para que
+  // su identidad solo cambie cuando cambia la fecha, y así el useEffect
+  // de abajo no se dispare en cada render.
+  const loadReservas = useCallback(async () => {
+    setListState({ status: 'loading', message: '' });
+    try {
+      const { data } = await listFieldBookings({ date: formData.date });
+      setReservas(
+        data
+          .filter((booking) => SLOT_HOLDING_STATUSES.includes(booking.status))
+          .map(mapBackendBookingToRow),
+      );
+      setListState({ status: 'idle', message: '' });
+    } catch (error) {
+      setReservas([]);
+      setListState({ status: 'error', message: error.message });
+    }
+  }, [formData.date]);
+
+  useEffect(() => {
+    loadReservas();
+  }, [loadReservas]);
 
   // Solo las reservas del día elegido alimentan la grilla: sin este
   // filtro, una reserva del 15 seguiría marcando esa hora como ocupada
@@ -200,7 +264,7 @@ function ReservasCancha() {
 
     try {
       const { startDatetime, endDatetime } = slotToIsoRange(formData.date, formData.selectedHour);
-      const booking = await createFieldBooking({
+      await createFieldBooking({
         resourceId: CANCHA_RESOURCE_ID,
         customerName: formData.customerName,
         customerPhone: formData.customerPhone,
@@ -208,21 +272,14 @@ function ReservasCancha() {
         endDatetime,
       });
 
-      // Se agrega a la misma lista que alimenta la grilla y el panel
-      // "Reservas del día": booking.bookingId es el id real que asignó
-      // MySQL, así que a partir de acá ya no es un dato mock.
-      setReservas((prev) => [
-        ...prev,
-        {
-          id: booking.bookingId,
-          cliente: formData.customerName,
-          date: formData.date,
-          hour: formData.selectedHour,
-          estado: 'Confirmada',
-        },
-      ]);
-      setFormData(INITIAL_FORM);
+      // La reserva ya quedó en el backend. En vez de agregarla a mano a
+      // la lista (y arriesgar que quede distinta a lo que guardó MySQL),
+      // se limpia el formulario CONSERVANDO la fecha y se vuelve a pedir
+      // el listado del día, para que la nueva reserva aparezca en la
+      // grilla tal como la devuelve HU-002.
+      setFormData((prev) => ({ ...INITIAL_FORM, date: prev.date }));
       setFeedback({ status: 'success', message: 'Reserva registrada correctamente.' });
+      await loadReservas();
     } catch (error) {
       // error.message ya viene traducido por reservasCanchaService.js
       // a partir de los criterios de aceptación CA-2 a CA-5 (conflicto
@@ -296,26 +353,39 @@ function ReservasCancha() {
               Reservas del día
             </h3>
             <p className="text-xs text-muted">{formatDateHeader(formData.date)}</p>
-            <ul className="mt-3 space-y-3">
-              {slots
-                .filter((s) => s.status === 'occupied' || s.status === 'pending')
-                .map((s) => (
-                  <li key={s.hour} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
-                    <p className="text-sm font-medium text-ink">{s.clientName}</p>
-                    <p className="text-xs text-faint">{s.hourLabel}</p>
-                    <span
-                      className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        s.status === 'occupied' ? 'bg-primary-50 text-primary-800' : 'bg-amber-50 text-amber-600'
-                      }`}
-                    >
-                      {s.status === 'occupied' ? 'Confirmada' : 'Pendiente'}
-                    </span>
-                  </li>
-                ))}
-              {slots.every((s) => s.status !== 'occupied' && s.status !== 'pending') && (
-                <li className="text-xs text-faint">Sin reservas registradas para este día.</li>
-              )}
-            </ul>
+
+            {listState.status === 'loading' && (
+              <p className="mt-3 text-xs text-faint">Cargando reservas…</p>
+            )}
+
+            {listState.status === 'error' && (
+              <p className="mt-3 rounded-lg bg-coral-50 px-3 py-2 text-xs text-coral-600">
+                {listState.message}
+              </p>
+            )}
+
+            {listState.status === 'idle' && (
+              <ul className="mt-3 space-y-3">
+                {slots
+                  .filter((s) => s.status === 'occupied' || s.status === 'pending')
+                  .map((s) => (
+                    <li key={s.hour} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
+                      <p className="text-sm font-medium text-ink">{s.clientName}</p>
+                      <p className="text-xs text-faint">{s.hourLabel}</p>
+                      <span
+                        className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          s.status === 'occupied' ? 'bg-primary-50 text-primary-800' : 'bg-amber-50 text-amber-600'
+                        }`}
+                      >
+                        {s.status === 'occupied' ? 'Confirmada' : 'Pendiente'}
+                      </span>
+                    </li>
+                  ))}
+                {slots.every((s) => s.status !== 'occupied' && s.status !== 'pending') && (
+                  <li className="text-xs text-faint">Sin reservas registradas para este día.</li>
+                )}
+              </ul>
+            )}
           </aside>
 
           {/* flex + h-full: DisponibilidadGrid ahora se estira para

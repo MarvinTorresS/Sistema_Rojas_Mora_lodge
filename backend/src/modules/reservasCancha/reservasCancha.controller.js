@@ -20,10 +20,33 @@ async function createBooking(req, res, next) {
   }
 }
 
+// GET /api/field-bookings — HU-002.
+// Lee los filtros opcionales del query string (date, status, page,
+// pageSize), ya validados en su forma por listBookingsRules, y delega
+// TODA la logica al service. Responde 200 con { data, meta }: `data` es
+// el arreglo de reservas (vacio si no hay, CA-2) y `meta` la info de
+// paginacion para que el frontend pueda pintar "pagina 1 de N".
+async function listBookings(req, res, next) {
+  try {
+    const result = await reservasCanchaService.listFieldBookings(req.query);
+    return res.json({
+      data: result.items,
+      meta: {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        totalPages: result.totalPages,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   createBooking,
+  listBookings,
 
-  // TODO (Wagner — HU-002): listBookings(req, res, next)
   // TODO (Kendall — HU-003): searchBookings(req, res, next)
   // TODO (Alison — HU-004): filterBookingsByStatus(req, res, next)
   // TODO (Kendall — HU-005): updateBooking(req, res, next)
