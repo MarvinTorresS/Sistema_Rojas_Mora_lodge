@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { createFieldBooking, listFieldBookings } from '../services/reservasCanchaService';
+import { createFieldBooking, listFieldBookings, searchFieldBookings } from '../services/reservasCanchaService';
 import DisponibilidadGrid from '../components/DisponibilidadGrid';
 
 /**
@@ -9,9 +9,8 @@ import DisponibilidadGrid from '../components/DisponibilidadGrid';
  *
  * HU-001 (registrar reserva) ya está implementada: el panel lateral
  * pasó de ser una plantilla vacía a un formulario real conectado al
- * backend (POST /api/field-bookings). Las demás historias (listar,
- * buscar, filtrar, modificar, cancelar — HU-002 a HU-006) siguen
- * pendientes.
+ * backend (POST /api/field-bookings). HU-002 consulta la ocupación y
+ * HU-003 busca reservas en una sección independiente.
  *
  * Esta versión reemplaza los campos de hora de texto libre por una
  * grilla visual de disponibilidad (DisponibilidadGrid.jsx), a pedido de
@@ -124,6 +123,11 @@ const INITIAL_FORM = {
 };
 
 const timeFormatter = new Intl.DateTimeFormat('es-CR', { hour: 'numeric', minute: '2-digit' });
+const searchDateFormatter = new Intl.DateTimeFormat('es-CR', { dateStyle: 'short', timeStyle: 'short' });
+const SEARCH_STATUS_LABELS = {
+  pending: 'Pendiente', active: 'Confirmada', rejected: 'Rechazada',
+  checked_in: 'Ingresada', completed: 'Completada', cancelled: 'Cancelada',
+};
 
 // Formatea el yyyy-mm-dd elegido para mostrarlo legible junto al
 // encabezado de la lista/grilla ("Reservas del día — lun. 15 sep.").
@@ -205,6 +209,34 @@ function ReservasCancha() {
   // formulario: leer y crear son dos operaciones distintas y pueden
   // estar en estados diferentes a la vez.
   const [listState, setListState] = useState({ status: 'loading', message: '' });
+
+  // HU-003 no modifica reservas, formData ni los slots de disponibilidad.
+  const [searchForm, setSearchForm] = useState({ customerName: '', phone: '', date: '' });
+  const [searchState, setSearchState] = useState({ status: 'idle', message: '', data: [], meta: null });
+  const [searchCriteria, setSearchCriteria] = useState(null);
+
+  async function loadSearch(criteria, page = 1) {
+    setSearchState({ status: 'loading', message: '', data: [], meta: null });
+    try {
+      const result = await searchFieldBookings({ ...criteria, page });
+      setSearchState({ status: 'success', message: '', data: result.data, meta: result.meta });
+    } catch (error) {
+      setSearchState({ status: 'error', message: error.message, data: [], meta: null });
+    }
+  }
+
+  function handleSearch(event) {
+    event.preventDefault();
+    if (searchState.status === 'loading') return;
+    const criteria = Object.fromEntries(Object.entries(searchForm)
+      .map(([key, value]) => [key, value.trim()]).filter(([, value]) => value !== ''));
+    if (Object.keys(criteria).length === 0) {
+      setSearchState({ status: 'error', message: 'Ingresá al menos un criterio: cliente, teléfono o fecha.', data: [], meta: null });
+      return;
+    }
+    setSearchCriteria(criteria);
+    loadSearch(criteria);
+  }
 
   // Trae del backend las reservas del día elegido. useCallback para que
   // su identidad solo cambie cuando cambia la fecha, y así el useEffect
@@ -337,6 +369,78 @@ function ReservasCancha() {
             Abierta de 1:00 p.m. a 9:00 p.m. · tarifa ₡8.000 por hora
           </p>
         </div>
+
+        <section aria-labelledby="search-title" className="shrink-0 rounded-xl border border-line bg-surface p-4 shadow-card">
+          <h3 id="search-title" className="font-display text-base font-semibold text-primary-900">Buscar reservas</h3>
+          <p className="mt-1 text-xs text-muted">Combiná cliente, teléfono exacto o fecha de inicio. Incluye reservas históricas.</p>
+          <form onSubmit={handleSearch} className="mt-3">
+            <fieldset disabled={searchState.status === 'loading'} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <label htmlFor="search-customer" className="block text-xs font-medium text-muted">Cliente</label>
+                <input id="search-customer" type="text" maxLength={150} value={searchForm.customerName}
+                  onChange={(event) => setSearchForm((prev) => ({ ...prev, customerName: event.target.value }))}
+                  placeholder="Ej. Ken" className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label htmlFor="search-phone" className="block text-xs font-medium text-muted">Teléfono exacto</label>
+                <input id="search-phone" type="tel" maxLength={20} value={searchForm.phone}
+                  onChange={(event) => setSearchForm((prev) => ({ ...prev, phone: event.target.value }))}
+                  placeholder="Como está registrado" className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label htmlFor="search-date" className="block text-xs font-medium text-muted">Fecha de inicio</label>
+                <input id="search-date" type="date" value={searchForm.date}
+                  onChange={(event) => setSearchForm((prev) => ({ ...prev, date: event.target.value }))}
+                  className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm" />
+              </div>
+              <button type="submit" className="self-end rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60">
+                {searchState.status === 'loading' ? 'Buscando…' : 'Buscar'}
+              </button>
+            </fieldset>
+          </form>
+          <div aria-live="polite" aria-busy={searchState.status === 'loading'}>
+            {searchState.status === 'loading' && <p className="mt-3 text-sm text-muted">Buscando reservas…</p>}
+            {searchState.status === 'error' && <p role="alert" className="mt-3 rounded-lg bg-coral-50 p-3 text-sm text-coral-600">{searchState.message}</p>}
+            {searchState.status === 'success' && searchState.data.length === 0 && (
+              <p className="mt-3 text-sm text-muted">No se encontraron reservas con los criterios indicados.</p>
+            )}
+            {searchState.status === 'success' && searchState.data.length > 0 && (
+              <>
+                <p className="mt-3 text-xs text-muted">{searchState.meta.total} reservas encontradas</p>
+                <div className="mt-2 max-h-64 overflow-auto">
+                  <table className="w-full text-left text-xs">
+                    <caption className="sr-only">Resultados de búsqueda de reservas de cancha</caption>
+                    <thead><tr>{['Reserva', 'Cliente', 'Teléfono', 'Cancha', 'Inicio', 'Fin', 'Estado'].map((label) => (
+                      <th key={label} scope="col" className="whitespace-nowrap border-b border-line p-2">{label}</th>
+                    ))}</tr></thead>
+                    <tbody>{searchState.data.map((booking) => (
+                      <tr key={booking.bookingId}>
+                        <td className="border-b border-line p-2">#{booking.bookingId}</td>
+                        <td className="border-b border-line p-2">{booking.customer?.fullName ?? 'Sin nombre'}</td>
+                        <td className="whitespace-nowrap border-b border-line p-2">{booking.customer?.phone ?? '—'}</td>
+                        <td className="border-b border-line p-2">{booking.resource?.name ?? '—'}</td>
+                        <td className="whitespace-nowrap border-b border-line p-2">{searchDateFormatter.format(new Date(booking.startDatetime))}</td>
+                        <td className="whitespace-nowrap border-b border-line p-2">{searchDateFormatter.format(new Date(booking.endDatetime))}</td>
+                        <td className="border-b border-line p-2">{SEARCH_STATUS_LABELS[booking.status] ?? booking.status}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            {searchState.status === 'success' && searchState.meta.totalPages > 1 && (
+              <nav aria-label="Paginación de búsqueda" className="mt-3 flex items-center gap-3 text-xs">
+                <button type="button" disabled={searchState.meta.page <= 1}
+                  onClick={() => loadSearch(searchCriteria, searchState.meta.page - 1)}
+                  className="rounded-lg border border-line px-3 py-2 disabled:opacity-50">Anterior</button>
+                <span>Página {searchState.meta.page} de {searchState.meta.totalPages}</span>
+                <button type="button" disabled={searchState.meta.page >= searchState.meta.totalPages}
+                  onClick={() => loadSearch(searchCriteria, searchState.meta.page + 1)}
+                  className="rounded-lg border border-line px-3 py-2 disabled:opacity-50">Siguiente</button>
+              </nav>
+            )}
+          </div>
+        </section>
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
           {/* Lista lateral "Reservas del día" — resumen en texto de lo

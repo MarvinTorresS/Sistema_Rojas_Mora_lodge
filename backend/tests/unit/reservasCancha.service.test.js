@@ -14,15 +14,18 @@
 //                             pnpm test -- reservasCancha
 
 jest.mock('../../src/models', () => ({
-  Booking: { findAndCountAll: jest.fn() },
-  Resource: { name: 'Resource' },
-  ResourceBlock: { name: 'ResourceBlock' },
-  Customer: { name: 'Customer' },
+  Booking: { findAndCountAll: jest.fn(), findOne: jest.fn(), create: jest.fn() },
+  Resource: { name: 'Resource', findOne: jest.fn() },
+  ResourceBlock: { name: 'ResourceBlock', findOne: jest.fn() },
+  Customer: { name: 'Customer', findOrCreate: jest.fn() },
 }));
 
-const { Booking } = require('../../src/models');
+const { Booking, Resource, ResourceBlock, Customer } = require('../../src/models');
+const { Op } = require('sequelize');
+const request = require('supertest');
+const app = require('../../src/app');
 const service = require('../../src/modules/reservasCancha/reservasCancha.service');
-const { listBookingsRules } = require('../../src/modules/reservasCancha/reservasCancha.validator');
+const { listBookingsRules, searchBookingsRules } = require('../../src/modules/reservasCancha/reservasCancha.validator');
 
 afterEach(() => {
   jest.clearAllMocks();
@@ -250,5 +253,133 @@ describe('listBookingsRules (HU-002, validacion de forma)', () => {
   it('rechaza page < 1 y pageSize > 100 con 422', async () => {
     expect((await runValidator(listBookingsRules, { page: '0' })).statusCode).toBe(422);
     expect((await runValidator(listBookingsRules, { pageSize: '500' })).statusCode).toBe(422);
+  });
+});
+
+// HU-003: consultas y contrato HTTP con modelos simulados (sin MySQL).
+describe('HU-003 buscar reservas', () => {
+  const row = {
+    bookingId: 31, status: 'cancelled', originChannel: 'staff',
+    startDatetime: '2026-09-15T19:00:00.000Z', endDatetime: '2026-09-15T21:00:00.000Z',
+    resource: { resourceId: 1, name: 'Cancha sintetica' },
+    customer: { customerId: 4, fullName: 'Kendall Mora', phone: '88887777' },
+  };
+  beforeEach(() => Booking.findAndCountAll.mockResolvedValue({ rows: [row], count: 1 }));
+
+  it.each([
+    ['cliente', { customerName: 'Ken' }],
+    ['telefono', { phone: '88887777' }],
+    ['fecha', { date: '2026-09-15' }],
+  ])('CP-003-01 busqueda exitosa por %s', async (_label, criteria) => {
+    const result = await service.searchFieldBookings(criteria);
+    expect(result.items).toEqual([row]);
+    expect(result.total).toBe(1);
+    const options = Booking.findAndCountAll.mock.calls[0][0];
+    const customer = options.include.find((item) => item.as === 'customer');
+    expect(customer.required).toBe(true);
+    if (criteria.customerName) expect(customer.where.fullName).toEqual({ [Op.like]: '%Ken%' });
+    if (criteria.phone) expect(customer.where.phone).toBe('88887777');
+    if (criteria.date) {
+      expect(options.where.startDatetime).toEqual({
+        [Op.gte]: new Date(2026, 8, 15), [Op.lt]: new Date(2026, 8, 16),
+      });
+    }
+    expect(options.include.find((item) => item.as === 'resource')).toMatchObject({
+      required: true, where: { resourceType: 'field' },
+    });
+    expect(options.where.status).toBeUndefined();
+  });
+
+  it('combina nombre, telefono y fecha con AND y pagina los resultados', async () => {
+    Booking.findAndCountAll.mockResolvedValue({ rows: [row], count: 42 });
+    const result = await service.searchFieldBookings({ customerName: 'Ken', phone: '88887777', date: '2026-09-15', page: '2', pageSize: '5' });
+    const options = Booking.findAndCountAll.mock.calls[0][0];
+    expect(options.include[1].where).toEqual({ fullName: { [Op.like]: '%Ken%' }, phone: '88887777' });
+    expect(options.where.startDatetime).toBeDefined();
+    expect(options.limit).toBe(5);
+    expect(options.offset).toBe(5);
+    expect(options.distinct).toBe(true);
+    expect(result.totalPages).toBe(9);
+  });
+
+  it('trata los comodines LIKE como texto literal', async () => {
+    await service.searchFieldBookings({ customerName: 'Ken%_' });
+    expect(Booking.findAndCountAll.mock.calls[0][0].include[1].where.fullName)
+      .toEqual({ [Op.like]: '%Ken\\%\\_%' });
+  });
+
+  it('CP-003-02 sin resultados devuelve un arreglo vacio y metadata', async () => {
+    Booking.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+    const response = await request(app).get('/api/field-bookings/search').query({ customerName: 'Nadie' });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } });
+  });
+
+  it('ruta de busqueda devuelve cliente y contrato paginado', async () => {
+    const response = await request(app).get('/api/field-bookings/search').query({ customerName: 'Ken' });
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([row]);
+    expect(response.body.meta.total).toBe(1);
+  });
+
+  it.each([{}, { customerName: '  ', phone: '', date: '' }, { page: '1' }])('rechaza criterios ausentes: %j', async (criteria) => {
+    const response = await request(app).get('/api/field-bookings/search').query(criteria);
+    expect(response.status).toBe(422);
+    expect(response.body.error.details.some((item) => item.message.includes('al menos un criterio'))).toBe(true);
+    expect(Booking.findAndCountAll).not.toHaveBeenCalled();
+  });
+
+  it('el servicio tambien rechaza una busqueda vacia', async () => {
+    await expect(service.searchFieldBookings()).rejects.toMatchObject({ statusCode: 422 });
+  });
+
+  it.each([
+    { date: '2026-02-30' }, { date: '2026-9-1' },
+    { customerName: ['Ken', 'Ana'] }, { phone: { value: '88887777' } },
+    { customerName: 'K'.repeat(151) }, { phone: '8'.repeat(21) },
+    { customerName: 'Ken', page: '0' }, { customerName: 'Ken', pageSize: '101' },
+  ])('valida parametros invalidos: %j', async (criteria) => {
+    const result = await runValidator(searchBookingsRules, criteria);
+    expect(result.statusCode).toBe(422);
+  });
+
+  it('acepta nombre de un caracter, fecha historica y campos vacios opcionales', async () => {
+    const result = await runValidator(searchBookingsRules, { customerName: ' K ', phone: '', date: '' });
+    expect(result.nextCalled).toBe(true);
+    expect((await runValidator(searchBookingsRules, { date: '2020-01-01' })).nextCalled).toBe(true);
+  });
+
+  it('delega errores al middleware global', async () => {
+    Booking.findAndCountAll.mockRejectedValueOnce(new service.DomainError('Error controlado', 422));
+    const response = await request(app).get('/api/field-bookings/search').query({ phone: '88887777' });
+    expect(response.status).toBe(422);
+    expect(response.body.error.message).toBe('Error controlado');
+  });
+});
+
+describe('compatibilidad HTTP HU-001 y HU-002', () => {
+  it('HU-001 mantiene registro y deteccion de conflictos', async () => {
+    Resource.findOne.mockResolvedValue({ resourceId: 1, status: 'available' });
+    ResourceBlock.findOne.mockResolvedValue(null);
+    Booking.findOne.mockResolvedValue(null);
+    Customer.findOrCreate.mockResolvedValue([{ customerId: 4 }, false]);
+    Booking.create.mockResolvedValue({ bookingId: 32, status: 'active' });
+    const start = new Date(Date.now() + 86400000);
+    const payload = { resourceId: 1, customerName: 'Kendall Mora', customerPhone: '88887777', startDatetime: start.toISOString(), endDatetime: new Date(start.getTime() + 7200000).toISOString() };
+    const response = await request(app).post('/api/field-bookings').send(payload);
+    expect(response.status).toBe(201);
+    expect(response.body.data.bookingId).toBe(32);
+    expect(Booking.create).toHaveBeenCalledWith(expect.objectContaining({ customerId: 4, resourceId: 1, status: 'active', originChannel: 'staff' }));
+    Booking.findOne.mockResolvedValueOnce({ bookingId: 32 });
+    expect((await request(app).post('/api/field-bookings').send(payload)).status).toBe(409);
+    expect((await request(app).post('/api/field-bookings').send({})).status).toBe(422);
+  });
+
+  it('HU-002 sigue permitiendo listar sin criterios de busqueda', async () => {
+    Booking.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+    const response = await request(app).get('/api/field-bookings');
+    expect(response.status).toBe(200);
+    expect(response.body.meta.pageSize).toBe(20);
+    expect(response.body.data).toEqual([]);
   });
 });

@@ -13,7 +13,7 @@
 // frontend/src/App.jsx).
 const express = require('express');
 const controller = require('./reservasCancha.controller');
-const { createBookingRules, listBookingsRules } = require('./reservasCancha.validator');
+const { createBookingRules, listBookingsRules, searchBookingsRules } = require('./reservasCancha.validator');
 
 const router = express.Router();
 
@@ -27,8 +27,8 @@ router.post('/', createBookingRules, controller.createBooking);
 // middleware todavia no existe en el proyecto.
 router.get('/', listBookingsRules, controller.listBookings);
 
-// TODO (Kendall — HU-003): buscar por cliente, telefono o fecha.
-// router.get('/search', searchBookingsRules, controller.searchBookings);
+// HU-003: buscar por cliente, telefono o fecha.
+router.get('/search', searchBookingsRules, controller.searchBookings);
 
 // TODO (Alison — HU-004): filtrar por estado.
 // router.get('/filter', filterBookingsRules, controller.filterBookingsByStatus);

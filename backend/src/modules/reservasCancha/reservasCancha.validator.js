@@ -101,8 +101,31 @@ const listBookingsRules = [
   handleValidationErrors,
 ];
 
+// HU-003: los campos vacios se consideran criterios ausentes.
+const searchBookingsRules = [
+  query('customerName').optional().isString().bail().trim()
+    .isLength({ max: 150 }).withMessage('El cliente debe tener como maximo 150 caracteres.'),
+  query('phone').optional().isString().bail().trim()
+    .isLength({ max: 20 }).withMessage('El telefono debe tener como maximo 20 caracteres.'),
+  query('date').optional().isString().bail().trim()
+    .custom((value) => value === '' || /^\d{4}-\d{2}-\d{2}$/.test(value))
+    .withMessage('date debe tener formato yyyy-mm-dd.').bail()
+    .if((value) => value !== '')
+    .isDate({ format: 'YYYY-MM-DD', strictMode: true })
+    .withMessage('date debe ser una fecha valida.'),
+  query('page').optional().isString().bail().isInt({ min: 1 })
+    .withMessage('page debe ser un entero mayor o igual a 1.'),
+  query('pageSize').optional().isString().bail().isInt({ min: 1, max: 100 })
+    .withMessage('pageSize debe ser un entero entre 1 y 100.'),
+  query().custom((value) => ['customerName', 'phone', 'date']
+    .some((field) => typeof value[field] === 'string' && value[field].trim() !== ''))
+    .withMessage('Se requiere al menos un criterio de busqueda: cliente, telefono o fecha.'),
+  handleValidationErrors,
+];
+
 module.exports = {
   createBookingRules,
   listBookingsRules,
+  searchBookingsRules,
   handleValidationErrors,
 };

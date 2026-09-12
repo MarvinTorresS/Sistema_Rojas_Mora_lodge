@@ -43,11 +43,29 @@ async function listBookings(req, res, next) {
   }
 }
 
+// HU-003: conserva el contrato paginado de HU-002.
+async function searchBookings(req, res, next) {
+  try {
+    const result = await reservasCanchaService.searchFieldBookings(req.query);
+    return res.json({
+      data: result.items,
+      meta: {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        totalPages: result.totalPages,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   createBooking,
   listBookings,
 
-  // TODO (Kendall — HU-003): searchBookings(req, res, next)
+  searchBookings,
   // TODO (Alison — HU-004): filterBookingsByStatus(req, res, next)
   // TODO (Kendall — HU-005): updateBooking(req, res, next)
   // TODO (Alison — HU-006): cancelBooking(req, res, next)

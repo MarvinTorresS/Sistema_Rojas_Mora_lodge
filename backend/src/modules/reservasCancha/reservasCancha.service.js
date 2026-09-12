@@ -290,6 +290,37 @@ async function listFieldBookings(query = {}) {
   };
 }
 
+// HU-003: AND entre criterios; incluye historicos y todos los estados.
+async function searchFieldBookings(query = {}) {
+  const customerName = query.customerName?.trim();
+  const phone = query.phone?.trim();
+  const date = query.date?.trim();
+  if (!customerName && !phone && !date) {
+    throw new DomainError('Se requiere al menos un criterio de busqueda: cliente, telefono o fecha.', 422);
+  }
+
+  const customerWhere = {};
+  if (customerName) {
+    // Los comodines introducidos por el usuario se buscan literalmente.
+    const escapedName = customerName.replace(/[\\%_]/g, '\\$&');
+    customerWhere.fullName = { [Op.like]: `%${escapedName}%` };
+  }
+  if (phone) customerWhere.phone = phone;
+  const { page, pageSize, limit, offset } = normalizePagination(query);
+  const { rows, count } = await Booking.findAndCountAll({
+    where: buildListBookingsWhere({ date }),
+    include: [
+      { model: Resource, as: 'resource', where: { resourceType: FIELD_RESOURCE_TYPE }, required: true },
+      { model: Customer, as: 'customer', where: customerWhere, required: true },
+    ],
+    order: [['startDatetime', 'ASC'], ['bookingId', 'ASC']],
+    limit,
+    offset,
+    distinct: true,
+  });
+  return { items: rows.map(mapBookingRow), page, pageSize, total: count, totalPages: Math.ceil(count / pageSize) };
+}
+
 module.exports = {
   DomainError,
   MAX_ADVANCE_BOOKING_DAYS,
@@ -305,8 +336,7 @@ module.exports = {
   mapBookingRow,
   listFieldBookings,
 
-  // TODO (Kendall — HU-003, CA-1/CA-2): searchFieldBookings({ customerName, phone, date })
-  // Busqueda por cliente, telefono o fecha exacta.
+  searchFieldBookings,
 
   // TODO (Alison — HU-004, CA-1/CA-2): filterFieldBookingsByStatus(status)
   // Reutiliza el mismo modelo Booking.status ('pending'|'active'|...).
