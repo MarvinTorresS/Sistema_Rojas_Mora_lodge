@@ -7,13 +7,29 @@
 // probarla con Jest llamando las funciones directo, sin levantar un
 // servidor Express (ver tests/unit/).
 const { Op } = require('sequelize');
-const { Booking, Resource, ResourceBlock, Customer } = require('../../models');
+const { Booking, Resource, ResourceBlock, Customer, AuditLog } = require('../../models');
 
 // CA-4 "Reserva con demasiada anticipacion": limite de dias hacia el
 // futuro para poder registrar una reserva. Definido como constante (no
 // un numero suelto en medio del codigo/"magic number") para que sea
 // facil de encontrar y ajustar si el negocio cambia la politica.
 const MAX_ADVANCE_BOOKING_DAYS = 30;
+
+// CA-3 / CA-6 (HU-006): ventana minima de anticipacion para cancelar
+// sin autorizacion especial. Configurable por el Administrador segun
+// la historia de usuario; se deja como constante con el valor por
+// defecto documentado (24 horas), misma convencion que
+// MAX_ADVANCE_BOOKING_DAYS.
+//
+// IMPORTANTE: esta constante va ARRIBA del archivo a proposito. Una
+// declaracion `const` no se "hoistea" con su valor como una funcion
+// declarada con `function` (esas si quedan disponibles en todo el
+// archivo sin importar el orden) -- si esta linea queda mas abajo,
+// pero se usa antes (por ejemplo dentro de module.exports, que se
+// ejecuta de arriba a abajo), Node explota con
+// "ReferenceError: Cannot access ... before initialization" apenas
+// arranca el servidor.
+const MIN_CANCELLATION_NOTICE_HOURS = 24;
 
 // Tipo de recurso que atiende este modulo. Resource es una tabla
 // generica que tambien sirve para cabana/salon/mesa (ver
@@ -338,16 +354,88 @@ module.exports = {
 
   searchFieldBookings,
 
-  // TODO (Alison — HU-004, CA-1/CA-2): filterFieldBookingsByStatus(status)
-  // Reutiliza el mismo modelo Booking.status ('pending'|'active'|...).
+  // HU-004 (Alison) — Filtrar las reservas de la cancha por estado, para
+  // un dia especifico. CA-1 y CA-2 ya quedan cubiertos reutilizando
+  // integramente listFieldBookings (HU-002, Wagner): status ya viaja
+  // validado por el validator de este endpoint (aqui es obligatorio, a
+  // diferencia de HU-002 donde es opcional), asi que no hace falta
+  // duplicar la consulta a Sequelize.
+  filterFieldBookingsByStatus,
 
   // TODO (Kendall — HU-005, CA-1..CA-5): updateFieldBooking(bookingId, changes)
   // Ojo con CA-4 "Modificacion de reserva ya confirmada (origen web)":
   // probablemente exige una regla distinta segun originChannel.
 
-  // TODO (Alison — HU-006, CA-1..CA-6): cancelFieldBooking(bookingId, { reason, authorizedByUserId })
-  // CA-3 "fuera de politica" y CA-6 "autorizada por Administrador"
-  // sugieren una ventana de tiempo minima para cancelar sin
-  // autorizacion extra (definir con el equipo, igual que se definio
-  // MAX_ADVANCE_BOOKING_DAYS arriba).
+  // HU-006 (Alison) — Cancelar una reserva existente de cancha sintetica.
+  MIN_CANCELLATION_NOTICE_HOURS,
+  cancelFieldBooking,
 };
+
+// HU-004 (Alison) — ver comentario junto al export.
+async function filterFieldBookingsByStatus(query = {}) {
+  return listFieldBookings(query);
+}
+
+// HU-006 (Alison) — Cancelar una reserva existente de cancha sintetica.
+//
+// `role` y `authorizedByUserId` llegan del body porque el modulo de
+// usuarios/autenticacion (Sprint 5) todavia no existe: no hay un
+// authMiddleware que popule req.user.role de forma confiable (mismo
+// hueco que CA-3 de HU-002, ver TODO en reservasCancha.routes.js). Por
+// ahora se CONFIA en lo que manda el cliente para CA-6; cuando exista
+// el middleware de auth, ese valor deberia venir de req.user.role en
+// vez del body, sin cambiar el resto de esta funcion.
+async function cancelFieldBooking(bookingId, { reason, role, authorizedByUserId } = {}) {
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) {
+    throw new DomainError('La reserva indicada no existe.', 404);
+  }
+
+  // CA-4: Reserva ya cancelada previamente.
+  if (booking.status === 'cancelled') {
+    throw new DomainError('La reserva ya se encuentra cancelada.', 409);
+  }
+
+  // CA-5: Motivo obligatorio, no vacio, no solo espacios, max 250.
+  const trimmedReason = (reason ?? '').trim();
+  if (!trimmedReason) {
+    throw new DomainError('El motivo de cancelacion es obligatorio.', 422);
+  }
+  if (trimmedReason.length > 250) {
+    throw new DomainError('El motivo de cancelacion no puede superar los 250 caracteres.', 422);
+  }
+
+  // CA-3 / CA-6: ventana de anticipacion.
+  const hoursUntilStart = (booking.startDatetime.getTime() - Date.now()) / (1000 * 60 * 60);
+  const isLateCancellation = hoursUntilStart < MIN_CANCELLATION_NOTICE_HOURS;
+
+  if (isLateCancellation && role !== 'Administrador') {
+    // CA-3: fuera de politica, y no es una excepcion autorizada.
+    throw new DomainError(
+      `La cancelacion ya no esta permitida con menos de ${MIN_CANCELLATION_NOTICE_HOURS} horas de anticipacion.`,
+      409,
+    );
+  }
+
+  booking.status = 'cancelled';
+  booking.cancellationReason = trimmedReason;
+  await booking.save();
+
+  // CA-6: solo la EXCEPCION (cancelacion tardia autorizada) se audita
+  // aqui; una cancelacion normal dentro de la ventana no genera este
+  // registro.
+  if (isLateCancellation) {
+    await AuditLog.create({
+      userId: authorizedByUserId ?? null,
+      action: 'field_booking_cancelled_out_of_policy',
+      entityType: 'booking',
+      entityId: booking.bookingId,
+      details: JSON.stringify({
+        reason: trimmedReason,
+        hoursBeforeStart: Number(hoursUntilStart.toFixed(2)),
+      }),
+    });
+  }
+
+  return booking;
+}

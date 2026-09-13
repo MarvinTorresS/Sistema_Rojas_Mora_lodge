@@ -89,3 +89,51 @@ export async function listFieldBookings(params = {}) {
     throw friendlyError;
   }
 }
+
+/**
+ * HU-004 — Filtrar las reservas de la cancha por estado, para un día
+ * específico. Endpoint dedicado (a diferencia de listFieldBookings,
+ * donde status es opcional): acá status es siempre obligatorio.
+ *
+ * @param {{ date?: string, status: string, page?: number, pageSize?: number }} params
+ * @returns {Promise<{ data: object[], meta: object }>}
+ */
+export async function filterFieldBookingsByStatus(params = {}) {
+  try {
+    const response = await api.get(`${BASE_PATH}/filter`, { params });
+    return response.data;
+  } catch (error) {
+    const backendError = error.response?.data?.error;
+    const friendlyError = new Error(
+      backendError?.message ?? 'No se pudo filtrar las reservas. Intentá de nuevo.',
+    );
+    friendlyError.details = backendError?.details;
+    friendlyError.status = error.response?.status;
+    throw friendlyError;
+  }
+}
+
+/**
+ * HU-006 — Cancelar una reserva existente de cancha sintética.
+ *
+ * @param {number} bookingId
+ * @param {{ reason: string, role?: string, authorizedByUserId?: number }} payload
+ *   `role`/`authorizedByUserId` son un parche temporal mientras no
+ *   exista el módulo de autenticación (Sprint 5): sirven para que el
+ *   backend sepa si quien cancela es Administrador (CA-6).
+ * @returns {Promise<object>} la reserva ya cancelada
+ */
+export async function cancelFieldBooking(bookingId, payload) {
+  try {
+    const response = await api.post(`${BASE_PATH}/${bookingId}/cancel`, payload);
+    return response.data.data;
+  } catch (error) {
+    const backendError = error.response?.data?.error;
+    const friendlyError = new Error(
+      backendError?.message ?? 'No se pudo cancelar la reserva. Intentá de nuevo.',
+    );
+    friendlyError.details = backendError?.details;
+    friendlyError.status = error.response?.status;
+    throw friendlyError;
+  }
+}

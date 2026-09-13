@@ -13,7 +13,13 @@
 // frontend/src/App.jsx).
 const express = require('express');
 const controller = require('./reservasCancha.controller');
-const { createBookingRules, listBookingsRules, searchBookingsRules } = require('./reservasCancha.validator');
+const {
+  createBookingRules,
+  listBookingsRules,
+  searchBookingsRules,
+  filterBookingsRules,
+  cancelBookingRules,
+} = require('./reservasCancha.validator');
 
 const router = express.Router();
 
@@ -30,13 +36,13 @@ router.get('/', listBookingsRules, controller.listBookings);
 // HU-003: buscar por cliente, telefono o fecha.
 router.get('/search', searchBookingsRules, controller.searchBookings);
 
-// TODO (Alison — HU-004): filtrar por estado.
-// router.get('/filter', filterBookingsRules, controller.filterBookingsByStatus);
+// HU-004 (Alison) — filtrar por estado.
+router.get('/filter', filterBookingsRules, controller.filterBookingsByStatus);
 
 // TODO (Kendall — HU-005): modificar una reserva existente.
 // router.patch('/:bookingId', updateBookingRules, controller.updateBooking);
 
-// TODO (Alison — HU-006): cancelar una reserva existente.
-// router.post('/:bookingId/cancel', cancelBookingRules, controller.cancelBooking);
+// HU-006 (Alison) — cancelar una reserva existente.
+router.post('/:bookingId/cancel', cancelBookingRules, controller.cancelBooking);
 
 module.exports = router;

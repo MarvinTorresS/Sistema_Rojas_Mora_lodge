@@ -61,16 +61,40 @@ async function searchBookings(req, res, next) {
   }
 }
 
+// GET /api/field-bookings/filter — HU-004.
+async function filterBookingsByStatus(req, res, next) {
+  try {
+    const result = await reservasCanchaService.filterFieldBookingsByStatus(req.query);
+    return res.json({
+      data: result.items,
+      meta: {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        totalPages: result.totalPages,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+// POST /api/field-bookings/:bookingId/cancel — HU-006.
+async function cancelBooking(req, res, next) {
+  try {
+    const booking = await reservasCanchaService.cancelFieldBooking(req.params.bookingId, req.body);
+    return res.json({ data: booking });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   createBooking,
   listBookings,
 
   searchBookings,
-  // TODO (Alison — HU-004): filterBookingsByStatus(req, res, next)
+  filterBookingsByStatus,
   // TODO (Kendall — HU-005): updateBooking(req, res, next)
-  // TODO (Alison — HU-006): cancelBooking(req, res, next)
-  // Mismo patron que createBooking: leer req, llamar a la funcion del
-  // service correspondiente (ver los TODO en reservasCancha.service.js)
-  // y traducir el resultado a status HTTP. No agregar logica de negocio
-  // aqui.
+  cancelBooking,
 };

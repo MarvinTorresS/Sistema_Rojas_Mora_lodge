@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { createFieldBooking, listFieldBookings, searchFieldBookings } from '../services/reservasCanchaService';
+import { createFieldBooking, listFieldBookings, searchFieldBookings, filterFieldBookingsByStatus } from '../services/reservasCanchaService';
 import DisponibilidadGrid from '../components/DisponibilidadGrid';
 
 /**
@@ -215,6 +215,63 @@ function ReservasCancha() {
   const [searchState, setSearchState] = useState({ status: 'idle', message: '', data: [], meta: null });
   const [searchCriteria, setSearchCriteria] = useState(null);
 
+  // === HU-004 (Alison): filtro de reservas del día por estado ===
+  // Opciones tal como las especifica la historia de usuario (no los 6
+  // estados internos del ENUM de Booking.status): "Todas, Activas,
+  // Canceladas", por defecto "Todas".
+  const STATUS_FILTER_OPTIONS = [
+    { value: '', label: 'Todas' },
+    { value: 'active', label: 'Activas' },
+    { value: 'cancelled', label: 'Canceladas' },
+  ];
+
+  const [statusFilter, setStatusFilter] = useState(''); // '' = "Todas"
+  const [statusFilterState, setStatusFilterState] = useState({ status: 'idle', message: '', data: [] });
+
+  // Evita que una respuesta VIEJA (ej. la de "Todas" que se dispara sola
+  // al entrar a la pagina) pise el resultado de un filtro mas reciente
+  // (ej. "Canceladas") si llega despues por timing de red. Cada llamada
+  // a loadStatusFilter saca un numero de turno; si cuando responde el
+  // servidor ese numero ya no es el mas reciente, se descarta.
+  const statusFilterRequestId = useRef(0);
+
+  async function loadStatusFilter(status) {
+    const requestId = ++statusFilterRequestId.current;
+    setStatusFilterState({ status: 'loading', message: '', data: [] });
+    try {
+      // "Todas" reutiliza el listado general de HU-002 (sin status);
+      // un estado especifico usa el endpoint dedicado de HU-004.
+      const result = status
+        ? await filterFieldBookingsByStatus({ date: formData.date, status })
+        : await listFieldBookings({ date: formData.date });
+      if (requestId !== statusFilterRequestId.current) return; // respuesta vieja
+      setStatusFilterState({ status: 'success', message: '', data: result.data });
+    } catch (error) {
+      if (requestId !== statusFilterRequestId.current) return; // respuesta vieja
+      setStatusFilterState({ status: 'error', message: error.message, data: [] });
+    }
+  }
+
+  // CA-1: "Cuando cambie el filtro de estado" — se dispara siempre,
+  // incluso al volver a "Todas".
+  function handleStatusFilterChange(event) {
+    const value = event.target.value;
+    setStatusFilter(value);
+    loadStatusFilter(value);
+  }
+
+  // Carga los resultados apenas se monta la página (con "Todas" por
+  // defecto) y cada vez que cambia la fecha. Antes esto solo corria si
+  // statusFilterState.status !== 'idle', pero el estado INICIAL es
+  // justamente 'idle' -- por eso "Todas" nunca mostraba nada hasta que
+  // el usuario cambiaba el select una vez (y ya no podia volver a
+  // "Todas" sin que se quedara en blanco otra vez).
+  useEffect(() => {
+    loadStatusFilter(statusFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.date]);
+  // === fin HU-004 ===
+
   async function loadSearch(criteria, page = 1) {
     setSearchState({ status: 'loading', message: '', data: [], meta: null });
     try {
@@ -266,6 +323,15 @@ function ReservasCancha() {
   // aunque el recepcionista esté viendo el día 20.
   const reservasDelDia = reservas.filter((r) => r.date === formData.date);
   const slots = buildSlotsFromReservations(reservasDelDia, formData.date);
+
+  // HU-004 (Alison): la tabla de "Buscar reservas" tambien respeta el
+  // Estado elegido en el mismo fieldset. HU-003 (Kendall) no acepta
+  // status como criterio en el backend, asi que el filtro se aplica
+  // aqui, sobre los resultados ya traidos, para que "Cliente: alison" +
+  // "Estado: Canceladas" no muestre reservas activas de alison.
+  const visibleSearchResults = statusFilter
+    ? searchState.data.filter((booking) => booking.status === statusFilter)
+    : searchState.data;
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -346,7 +412,7 @@ function ReservasCancha() {
     // abajo, ese bloque ahora reclama TODO el alto disponible del
     // <main> (que si ocupa la pantalla completa, ver Layout.jsx) y se
     // lo reparte con la grilla, en vez de quedar flotando arriba.
-    <div className="flex h-full w-full flex-col gap-6 p-6 lg:flex-row">
+    <div className="flex min-h-full w-full flex-col gap-6 p-6 lg:flex-row">
       {/* Panel principal: lista del día + grilla de disponibilidad */}
       <div className="flex min-w-0 flex-[3] flex-col gap-6">
         <div>
@@ -372,9 +438,9 @@ function ReservasCancha() {
 
         <section aria-labelledby="search-title" className="shrink-0 rounded-xl border border-line bg-surface p-4 shadow-card">
           <h3 id="search-title" className="font-display text-base font-semibold text-primary-900">Buscar reservas</h3>
-          <p className="mt-1 text-xs text-muted">Combiná cliente, teléfono exacto o fecha de inicio. Incluye reservas históricas.</p>
+          <p className="mt-1 text-xs text-muted">Combiná cliente, teléfono exacto, fecha de inicio o estado. Incluye reservas históricas.</p>
           <form onSubmit={handleSearch} className="mt-3">
-            <fieldset disabled={searchState.status === 'loading'} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <fieldset disabled={searchState.status === 'loading'} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <div>
                 <label htmlFor="search-customer" className="block text-xs font-medium text-muted">Cliente</label>
                 <input id="search-customer" type="text" maxLength={150} value={searchForm.customerName}
@@ -393,27 +459,78 @@ function ReservasCancha() {
                   onChange={(event) => setSearchForm((prev) => ({ ...prev, date: event.target.value }))}
                   className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm" />
               </div>
-              <button type="submit" className="self-end rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60">
+              {/* HU-004 (Alison): filtro por estado, a la par de los
+                  demás campos de búsqueda (misma fila del fieldset),
+                  no en una fila aparte debajo. */}
+              <div>
+                <label htmlFor="status-filter" className="block text-xs font-medium text-muted">Estado</label>
+                <select id="status-filter" value={statusFilter} onChange={handleStatusFilterChange}
+                  className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm">
+                  {STATUS_FILTER_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+              <button type="submit" className="self-end rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60">
                 {searchState.status === 'loading' ? 'Buscando…' : 'Buscar'}
               </button>
             </fieldset>
           </form>
+          {statusFilterState.status === 'loading' && <p className="mt-2 text-sm text-muted">Filtrando…</p>}
+          <div aria-live="polite" aria-busy={statusFilterState.status === 'loading'}>
+            {statusFilterState.status === 'error' && (
+              <p role="alert" className="mt-3 rounded-lg bg-coral-50 p-3 text-sm text-coral-600">{statusFilterState.message}</p>
+            )}
+            {statusFilterState.status === 'success' && statusFilterState.data.length === 0 && (
+              <p className="mt-3 text-sm text-muted">
+                {statusFilter ? 'No hay reservas con el estado seleccionado.' : `No hay reservas registradas para ${formatDateHeader(formData.date)}.`}
+              </p>
+            )}
+            {statusFilterState.status === 'success' && statusFilterState.data.length > 0 && (
+              <div className="mt-3 max-h-64 overflow-auto">
+                <table className="w-full text-left text-xs">
+                  <caption className="sr-only">Reservas filtradas por estado</caption>
+                  <thead><tr>{['Reserva', 'Cliente', 'Inicio', 'Fin', 'Estado'].map((label) => (
+                    <th key={label} scope="col" className="whitespace-nowrap border-b border-line p-2">{label}</th>
+                  ))}</tr></thead>
+                  <tbody>{statusFilterState.data.map((booking) => (
+                    <tr key={booking.bookingId}>
+                      <td className="border-b border-line p-2">#{booking.bookingId}</td>
+                      <td className="border-b border-line p-2">{booking.customer?.fullName ?? 'Sin nombre'}</td>
+                      <td className="whitespace-nowrap border-b border-line p-2">{searchDateFormatter.format(new Date(booking.startDatetime))}</td>
+                      <td className="whitespace-nowrap border-b border-line p-2">{searchDateFormatter.format(new Date(booking.endDatetime))}</td>
+                      <td className="border-b border-line p-2">{SEARCH_STATUS_LABELS[booking.status] ?? booking.status}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          {/* fin HU-004 */}
           <div aria-live="polite" aria-busy={searchState.status === 'loading'}>
             {searchState.status === 'loading' && <p className="mt-3 text-sm text-muted">Buscando reservas…</p>}
             {searchState.status === 'error' && <p role="alert" className="mt-3 rounded-lg bg-coral-50 p-3 text-sm text-coral-600">{searchState.message}</p>}
-            {searchState.status === 'success' && searchState.data.length === 0 && (
-              <p className="mt-3 text-sm text-muted">No se encontraron reservas con los criterios indicados.</p>
+            {searchState.status === 'success' && visibleSearchResults.length === 0 && (
+              <p className="mt-3 text-sm text-muted">
+                {statusFilter && searchState.data.length > 0
+                  ? 'No se encontraron reservas con ese estado entre los resultados de la búsqueda.'
+                  : 'No se encontraron reservas con los criterios indicados.'}
+              </p>
             )}
-            {searchState.status === 'success' && searchState.data.length > 0 && (
+            {searchState.status === 'success' && visibleSearchResults.length > 0 && (
               <>
-                <p className="mt-3 text-xs text-muted">{searchState.meta.total} reservas encontradas</p>
+                <p className="mt-3 text-xs text-muted">
+                  {statusFilter
+                    ? `${visibleSearchResults.length} de ${searchState.meta.total} reservas encontradas (filtradas por estado)`
+                    : `${searchState.meta.total} reservas encontradas`}
+                </p>
                 <div className="mt-2 max-h-64 overflow-auto">
                   <table className="w-full text-left text-xs">
                     <caption className="sr-only">Resultados de búsqueda de reservas de cancha</caption>
                     <thead><tr>{['Reserva', 'Cliente', 'Teléfono', 'Cancha', 'Inicio', 'Fin', 'Estado'].map((label) => (
                       <th key={label} scope="col" className="whitespace-nowrap border-b border-line p-2">{label}</th>
                     ))}</tr></thead>
-                    <tbody>{searchState.data.map((booking) => (
+                    <tbody>{visibleSearchResults.map((booking) => (
                       <tr key={booking.bookingId}>
                         <td className="border-b border-line p-2">#{booking.bookingId}</td>
                         <td className="border-b border-line p-2">{booking.customer?.fullName ?? 'Sin nombre'}</td>
@@ -442,7 +559,9 @@ function ReservasCancha() {
           </div>
         </section>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
+        {/* fin Buscar reservas + filtro por estado, ver dentro del form de arriba */}
+
+        <div className="flex min-h-[420px] flex-1 flex-col gap-4 lg:flex-row">
           {/* Lista lateral "Reservas del día" — resumen en texto de lo
               mismo que ya se ve pintado en la grilla, para quien
               prefiera leer una lista en vez de escanear colores.
