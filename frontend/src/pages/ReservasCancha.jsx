@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { createFieldBooking, listFieldBookings, searchFieldBookings, filterFieldBookingsByStatus, updateFieldBooking } from '../services/reservasCanchaService';
+import { createFieldBooking, listFieldBookings, searchFieldBookings, filterFieldBookingsByStatus, updateFieldBooking, cancelFieldBooking } from '../services/reservasCanchaService';
 import DisponibilidadGrid from '../components/DisponibilidadGrid';
 
 /**
@@ -129,6 +129,33 @@ const SEARCH_STATUS_LABELS = {
   checked_in: 'Ingresada', completed: 'Completada', cancelled: 'Cancelada',
 };
 
+// "Vencida" es un concepto SOLO VISUAL (no existe una HU que lo pida
+// como regla de negocio real, se revisó toda la matriz de historias):
+// una reserva 'active' cuyo horario de fin ya pasó. No se guarda en la
+// base de datos ni cambia el status real — status sigue siendo
+// 'active' para todo lo demas (filtros, HU-006, etc.), esto solo
+// decide cómo se MUESTRA en pantalla.
+function isBookingExpired(booking) {
+  return booking.status !== 'cancelled' && new Date(booking.endDatetime) < new Date();
+}
+
+// Etiqueta a mostrar para una reserva: "Vencida" tiene prioridad visual
+// sobre "Confirmada" cuando ya paso su horario, sin tocar el status real.
+function getStatusLabel(booking) {
+  if (isBookingExpired(booking)) return 'Vencida';
+  return SEARCH_STATUS_LABELS[booking.status] ?? booking.status;
+}
+
+// El filtro "Activas" no debe incluir las vencidas (ya no estan
+// realmente activas aunque el status en BD siga en 'active'); "Todas"
+// si las sigue mostrando (solo cambia la etiqueta), y "Canceladas" no
+// se ve afectado (una cancelada nunca cuenta como vencida, ver
+// isBookingExpired arriba).
+function excludeExpiredFromActiveFilter(bookings, filter) {
+  if (filter !== 'active') return bookings;
+  return bookings.filter((booking) => !isBookingExpired(booking));
+}
+
 // Formatea el yyyy-mm-dd elegido para mostrarlo legible junto al
 // encabezado de la lista/grilla ("Reservas del día — lun. 15 sep.").
 // Se arma la fecha con año/mes/día sueltos (no `new Date(dateString)`)
@@ -227,11 +254,108 @@ function ReservasCancha() {
   const reservationsRequestId = useRef(0);
   const isSavingEdit = editState.status === 'loading';
 
+  // === HU-006 (Alison): cancelar una reserva activa ===
+  // Ya NO es un panel aparte con su propio "booking en foco": vive
+  // DENTRO del panel de Editar (mismo editingBooking), como pidio
+  // Alison. cancelStep controla en cual de los 3 pasos esta el panel:
+  //   null      -> panel normal de Editar (fecha/hora + boton "Eliminar reserva")
+  //   'reason'  -> se despliega el motivo (CA-5) al presionar "Eliminar reserva"
+  //   'confirm' -> CA-2: "¿Está seguro...?" con Si/No, se muestra al
+  //                presionar "Confirmar" en el paso de motivo
+  const [cancelStep, setCancelStep] = useState(null);
+  const [cancelForm, setCancelForm] = useState({ reason: '', isAdmin: false });
+  const [cancelState, setCancelState] = useState({ status: 'idle', message: '' });
+  const isCancelling = cancelState.status === 'loading';
+  // CA-3/CA-6: si faltan menos de 24h para el inicio, hace falta
+  // autorizacion de Administrador (ver MIN_CANCELLATION_NOTICE_HOURS en
+  // el backend). Se calcula tambien en el frontend para mostrar el
+  // aviso/checkbox de una vez, sin esperar a que el backend rechace.
+  const cancelHoursUntilStart = editingBooking
+    ? (new Date(editingBooking.startDatetime).getTime() - Date.now()) / (1000 * 60 * 60)
+    : null;
+  const cancelNeedsAdminOverride = cancelHoursUntilStart !== null && cancelHoursUntilStart < 24;
+
+  // Boton "Eliminar reserva" dentro del panel de Editar -> despliega el motivo.
+  function handleShowCancelReason() {
+    if (isSavingEdit || isCancelling) return;
+    setCancelForm({ reason: '', isAdmin: false });
+    setCancelState({ status: 'idle', message: '' });
+    setCancelStep('reason');
+  }
+
+  // "Volver" desde el paso de motivo -> regresa al panel normal de Editar.
+  function handleBackToEdit() {
+    if (isCancelling) return;
+    setCancelStep(null);
+    setCancelState({ status: 'idle', message: '' });
+  }
+
+  // CA-2: boton "Confirmar" del paso de motivo -> valida el motivo
+  // (CA-5) y recien ahi muestra el "¿Está seguro...?" (paso 'confirm').
+  // Todavia NO llama al backend aqui.
+  function handleGoToCancelConfirm(event) {
+    event.preventDefault();
+    const trimmedReason = cancelForm.reason.trim();
+    if (!trimmedReason) {
+      setCancelState({ status: 'error', message: 'El motivo de cancelación es obligatorio.' });
+      return;
+    }
+    setCancelState({ status: 'idle', message: '' });
+    setCancelStep('confirm');
+  }
+
+  // "No" del paso de confirmacion -> regresa al paso de motivo (conserva lo escrito).
+  function handleCancelConfirmNo() {
+    if (isCancelling) return;
+    setCancelStep('reason');
+  }
+
+  // "Si" del paso de confirmacion -> esta es la unica accion que
+  // realmente llama al backend.
+  async function handleCancelConfirmYes() {
+    if (isCancelling) return;
+    setCancelState({ status: 'loading', message: '' });
+    try {
+      await cancelFieldBooking(editingBooking.bookingId, {
+        reason: cancelForm.reason.trim(),
+        // CA-6: solo se manda 'Administrador' si la persona marco el
+        // checkbox de autorizacion; si no, el backend aplica CA-3
+        // normalmente (rechaza si esta fuera de la ventana de 24h).
+        role: cancelForm.isAdmin ? 'Administrador' : undefined,
+      });
+      setEditingBooking(null);
+      setCancelStep(null);
+      setCancelForm({ reason: '', isAdmin: false });
+      // Mismos refrescos que hace HU-005 al guardar una edicion, para
+      // que la reserva cancelada desaparezca/actualice en las 3 vistas.
+      await Promise.all([
+        loadReservas(), loadStatusFilter(statusFilter),
+        searchCriteria ? loadSearch(searchCriteria, 1) : Promise.resolve(),
+      ]);
+      setCancelState({ status: 'success', message: 'Reserva cancelada correctamente.' });
+    } catch (error) {
+      // Si el backend rechaza (ej. CA-3: fuera de politica sin
+      // autorizacion), se regresa al paso de motivo para que la
+      // persona vea el mensaje exacto y pueda marcar el checkbox de
+      // Administrador si corresponde, en vez de quedar atascada en el
+      // paso de Si/No sin poder corregir nada.
+      setCancelStep('reason');
+      setCancelState({ status: 'error', message: error.message });
+    }
+  }
+  // === fin HU-006 ===
+
   function handleEdit(booking) {
     if (isSavingEdit) return;
     setEditingBooking(booking);
     setEditForm({ startDatetime: toLocalDatetimeInput(booking.startDatetime), endDatetime: toLocalDatetimeInput(booking.endDatetime) });
     setEditState({ status: 'idle', message: '' });
+    // Por si quedo a medias cancelando OTRA reserva antes de entrar a
+    // esta: siempre arranca en el panel normal de edicion, no en el
+    // paso de motivo/confirmacion.
+    setCancelStep(null);
+    setCancelForm({ reason: '', isAdmin: false });
+    setCancelState({ status: 'idle', message: '' });
     editPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -240,6 +364,9 @@ function ReservasCancha() {
     setEditingBooking(null);
     setEditForm({ startDatetime: '', endDatetime: '' });
     setEditState({ status: 'idle', message: '' });
+    setCancelStep(null);
+    setCancelForm({ reason: '', isAdmin: false });
+    setCancelState({ status: 'idle', message: '' });
   }
 
   async function handleSaveEdit(event) {
@@ -385,9 +512,10 @@ function ReservasCancha() {
   // status como criterio en el backend, asi que el filtro se aplica
   // aqui, sobre los resultados ya traidos, para que "Cliente: alison" +
   // "Estado: Canceladas" no muestre reservas activas de alison.
-  const visibleSearchResults = statusFilter
-    ? searchState.data.filter((booking) => booking.status === statusFilter)
-    : searchState.data;
+  const visibleSearchResults = excludeExpiredFromActiveFilter(
+    statusFilter ? searchState.data.filter((booking) => booking.status === statusFilter) : searchState.data,
+    statusFilter,
+  );
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -537,25 +665,25 @@ function ReservasCancha() {
             {statusFilterState.status === 'error' && (
               <p role="alert" className="mt-3 rounded-lg bg-coral-50 p-3 text-sm text-coral-600">{statusFilterState.message}</p>
             )}
-            {statusFilterState.status === 'success' && statusFilterState.data.length === 0 && (
+            {statusFilterState.status === 'success' && excludeExpiredFromActiveFilter(statusFilterState.data, statusFilter).length === 0 && (
               <p className="mt-3 text-sm text-muted">
                 {statusFilter ? 'No hay reservas con el estado seleccionado.' : `No hay reservas registradas para ${formatDateHeader(formData.date)}.`}
               </p>
             )}
-            {statusFilterState.status === 'success' && statusFilterState.data.length > 0 && (
+            {statusFilterState.status === 'success' && excludeExpiredFromActiveFilter(statusFilterState.data, statusFilter).length > 0 && (
               <div className="mt-3 max-h-64 overflow-auto">
                 <table className="w-full text-left text-xs">
                   <caption className="sr-only">Reservas filtradas por estado</caption>
                   <thead><tr>{['Reserva', 'Cliente', 'Inicio', 'Fin', 'Estado'].map((label) => (
                     <th key={label} scope="col" className="whitespace-nowrap border-b border-line p-2">{label}</th>
                   ))}</tr></thead>
-                  <tbody>{statusFilterState.data.map((booking) => (
+                  <tbody>{excludeExpiredFromActiveFilter(statusFilterState.data, statusFilter).map((booking) => (
                     <tr key={booking.bookingId}>
                       <td className="border-b border-line p-2">#{booking.bookingId}</td>
                       <td className="border-b border-line p-2">{booking.customer?.fullName ?? 'Sin nombre'}</td>
                       <td className="whitespace-nowrap border-b border-line p-2">{searchDateFormatter.format(new Date(booking.startDatetime))}</td>
                       <td className="whitespace-nowrap border-b border-line p-2">{searchDateFormatter.format(new Date(booking.endDatetime))}</td>
-                      <td className="border-b border-line p-2">{SEARCH_STATUS_LABELS[booking.status] ?? booking.status}</td>
+                      <td className="border-b border-line p-2">{getStatusLabel(booking)}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -586,7 +714,9 @@ function ReservasCancha() {
                     <thead><tr>{['Reserva', 'Cliente', 'Teléfono', 'Cancha', 'Inicio', 'Fin', 'Estado', 'Acciones'].map((label) => (
                       <th key={label} scope="col" className="whitespace-nowrap border-b border-line p-2">{label}</th>
                     ))}</tr></thead>
-                    <tbody>{visibleSearchResults.map((booking) => (
+                    <tbody>{visibleSearchResults.map((booking) => {
+                      const expired = isBookingExpired(booking);
+                      return (
                       <tr key={booking.bookingId}>
                         <td className="border-b border-line p-2">#{booking.bookingId}</td>
                         <td className="border-b border-line p-2">{booking.customer?.fullName ?? 'Sin nombre'}</td>
@@ -594,16 +724,21 @@ function ReservasCancha() {
                         <td className="border-b border-line p-2">{booking.resource?.name ?? '—'}</td>
                         <td className="whitespace-nowrap border-b border-line p-2">{searchDateFormatter.format(new Date(booking.startDatetime))}</td>
                         <td className="whitespace-nowrap border-b border-line p-2">{searchDateFormatter.format(new Date(booking.endDatetime))}</td>
-                        <td className="border-b border-line p-2">{SEARCH_STATUS_LABELS[booking.status] ?? booking.status}</td>
-                        <td className="border-b border-line p-2">
-                          <button type="button" disabled={booking.status === 'cancelled' || isSavingEdit}
+                        <td className="border-b border-line p-2">{getStatusLabel(booking)}</td>
+                        <td className="whitespace-nowrap border-b border-line p-2">
+                          {/* HU-006 (Alison): "Eliminar reserva" ya NO va
+                              aqui como boton aparte -- vive DENTRO del
+                              panel de Editar (se despliega al entrar a
+                              editar esta reserva). */}
+                          <button type="button" disabled={booking.status === 'cancelled' || expired || isSavingEdit || isCancelling}
                             onClick={() => handleEdit(booking)}
                             aria-label={`Editar reserva ${booking.bookingId}`}
-                            title={booking.status === 'cancelled' ? 'Una reserva cancelada no puede modificarse.' : 'Editar fecha y horario'}
+                            title={expired ? 'Esta reserva ya venció, no se puede modificar.' : booking.status === 'cancelled' ? 'Una reserva cancelada no puede modificarse.' : 'Editar fecha y horario'}
                             className="rounded-lg border border-line px-3 py-2 text-primary-800 disabled:opacity-50">Editar</button>
                         </td>
                       </tr>
-                    ))}</tbody>
+                      );
+                    })}</tbody>
                   </table>
                 </div>
               </>
@@ -696,7 +831,80 @@ function ReservasCancha() {
           demasiado anchos son más difíciles de leer, no más útiles. */}
       <aside ref={editPanelRef} className="w-full shrink-0 rounded-xl border border-line bg-surface p-5 shadow-card lg:w-80">
         {editState.status === 'success' && <p role="status" className="mb-3 rounded-lg bg-teal-50 p-3 text-sm text-teal-600">{editState.message}</p>}
-        {editingBooking ? (
+        {cancelState.status === 'success' && <p role="status" className="mb-3 rounded-lg bg-teal-50 p-3 text-sm text-teal-600">{cancelState.message}</p>}
+        {editingBooking && cancelStep === 'confirm' ? (
+          // === HU-006 paso 3: "¿Está seguro...?" con Sí/No (CA-2) ===
+          <>
+            <h3 className="font-display text-base font-semibold text-primary-900">Cancelar reserva #{editingBooking.bookingId}</h3>
+            <p className="mt-2 text-sm text-muted">{editingBooking.customer?.fullName ?? 'Sin nombre'} · {editingBooking.customer?.phone ?? 'Sin teléfono'}</p>
+            <p className="mt-1 text-xs text-muted">
+              {editingBooking.resource?.name} · {searchDateFormatter.format(new Date(editingBooking.startDatetime))} – {searchDateFormatter.format(new Date(editingBooking.endDatetime))}
+            </p>
+            {/* CA-2: este mensaje aparece SOLO en este paso, despues de
+                que ya se escribio el motivo y se presiono "Confirmar" en
+                el paso anterior — no apenas se abre el panel. */}
+            <p className="mt-3 rounded-lg bg-surface-alt px-3 py-2 text-sm text-ink">
+              ¿Está seguro de que desea cancelar esta reserva?
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button type="button" disabled={isCancelling} onClick={handleCancelConfirmYes}
+                className="flex-1 rounded-lg bg-coral-600 px-4 py-2 text-sm text-white disabled:opacity-60">
+                {isCancelling ? 'Cancelando…' : 'Sí'}
+              </button>
+              <button type="button" disabled={isCancelling} onClick={handleCancelConfirmNo}
+                className="flex-1 rounded-lg border border-line px-4 py-2 text-sm disabled:opacity-60">No</button>
+            </div>
+            {cancelState.status === 'error' && <p role="alert" className="mt-3 rounded-lg bg-coral-50 p-3 text-sm text-coral-600">{cancelState.message}</p>}
+          </>
+        ) : editingBooking && cancelStep === 'reason' ? (
+          // === HU-006 paso 2: motivo (CA-5) + aviso/checkbox CA-3/CA-6 ===
+          <>
+            <h3 className="font-display text-base font-semibold text-primary-900">Cancelar reserva #{editingBooking.bookingId}</h3>
+            <p className="mt-2 text-sm text-muted">{editingBooking.customer?.fullName ?? 'Sin nombre'} · {editingBooking.customer?.phone ?? 'Sin teléfono'}</p>
+            <p className="mt-1 text-xs text-muted">
+              {editingBooking.resource?.name} · {searchDateFormatter.format(new Date(editingBooking.startDatetime))} – {searchDateFormatter.format(new Date(editingBooking.endDatetime))}
+            </p>
+            {/* CA-3/CA-6: aviso cuando faltan menos de 24h para el inicio. */}
+            {cancelNeedsAdminOverride && (
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                Faltan menos de 24 horas para esta reserva. Solo un Administrador puede
+                autorizar la cancelación fuera de política, marcando la casilla de abajo.
+              </p>
+            )}
+            <form onSubmit={handleGoToCancelConfirm} className="mt-4 space-y-3">
+              <fieldset disabled={isCancelling} className="space-y-3">
+                <div>
+                  <label htmlFor="cancel-reason" className="block text-xs font-medium text-muted">Motivo de cancelación</label>
+                  <textarea id="cancel-reason" required maxLength={250} rows={3} value={cancelForm.reason}
+                    onChange={(event) => setCancelForm((prev) => ({ ...prev, reason: event.target.value }))}
+                    placeholder="Ej. El cliente llamó a cancelar por lluvia."
+                    className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm" />
+                  <p className="mt-1 text-right text-[10px] text-faint">{cancelForm.reason.trim().length}/250</p>
+                </div>
+                {/* CA-6: checkbox de autorizacion, solo aparece cuando hace
+                    falta (fuera de la ventana de 24h). Parche temporal
+                    mientras no exista el modulo de autenticacion — ver
+                    comentario en cancelFieldBooking del backend. */}
+                {cancelNeedsAdminOverride && (
+                  <label className="flex items-start gap-2 text-xs text-ink">
+                    <input type="checkbox" checked={cancelForm.isAdmin}
+                      onChange={(event) => setCancelForm((prev) => ({ ...prev, isAdmin: event.target.checked }))}
+                      className="mt-0.5" />
+                    Confirmo que tengo rol de Administrador y autorizo esta cancelación fuera de política.
+                  </label>
+                )}
+                {/* CA-2: "El botón Confirmar solo se habilita si se
+                    completó el motivo de cancelación" — unica condicion,
+                    tal como lo dice la HU. Al presionarlo NO se cancela
+                    todavia: solo pasa al paso 3 (Si/No). */}
+                <button type="submit" disabled={!cancelForm.reason.trim()}
+                  className="w-full rounded-lg bg-coral-600 px-4 py-2 text-sm text-white disabled:opacity-60">Confirmar</button>
+                <button type="button" onClick={handleBackToEdit} className="w-full rounded-lg border border-line px-4 py-2 text-sm">Volver</button>
+              </fieldset>
+              {cancelState.status === 'error' && <p role="alert" className="rounded-lg bg-coral-50 p-3 text-sm text-coral-600">{cancelState.message}</p>}
+            </form>
+          </>
+        ) : editingBooking ? (
           <>
             <h3 className="font-display text-base font-semibold text-primary-900">Editar reserva #{editingBooking.bookingId}</h3>
             <p className="mt-2 text-sm text-muted">{editingBooking.customer?.fullName ?? 'Sin nombre'} · {editingBooking.customer?.phone ?? 'Sin teléfono'}</p>
@@ -719,6 +927,12 @@ function ReservasCancha() {
                 <button type="submit" className="w-full rounded-lg bg-primary-700 px-4 py-2 text-sm text-white disabled:opacity-60">
                   {isSavingEdit ? 'Guardando…' : 'Guardar cambios'}
                 </button>
+                {/* HU-006 (Alison): "Eliminar reserva" vive DENTRO del
+                    panel de Editar, como pidio Alison — no es un boton
+                    aparte en la tabla. Al presionarlo se despliega el
+                    paso de motivo (cancelStep = 'reason'). */}
+                <button type="button" onClick={handleShowCancelReason} disabled={isSavingEdit}
+                  className="w-full rounded-lg border border-coral-300 px-4 py-2 text-sm text-coral-600 disabled:opacity-60">Eliminar reserva</button>
                 <button type="button" onClick={cancelEdit} className="w-full rounded-lg border border-line px-4 py-2 text-sm">Cancelar edición</button>
               </fieldset>
               {editState.status === 'error' && <p role="alert" className="rounded-lg bg-coral-50 p-3 text-sm text-coral-600">{editState.message}</p>}

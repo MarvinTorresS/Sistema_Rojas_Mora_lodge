@@ -444,10 +444,10 @@ async function cancelFieldBooking(bookingId, { reason, role, authorizedByUserId 
   // CA-5: Motivo obligatorio, no vacio, no solo espacios, max 250.
   const trimmedReason = (reason ?? '').trim();
   if (!trimmedReason) {
-    throw new DomainError('El motivo de cancelacion es obligatorio.', 422);
+    throw new DomainError('El motivo de cancelación es obligatorio.', 422);
   }
   if (trimmedReason.length > 250) {
-    throw new DomainError('El motivo de cancelacion no puede superar los 250 caracteres.', 422);
+    throw new DomainError('El motivo de cancelación no puede superar los 250 caracteres.', 422);
   }
 
   // CA-3 / CA-6: ventana de anticipacion.
@@ -457,7 +457,7 @@ async function cancelFieldBooking(bookingId, { reason, role, authorizedByUserId 
   if (isLateCancellation && role !== 'Administrador') {
     // CA-3: fuera de politica, y no es una excepcion autorizada.
     throw new DomainError(
-      `La cancelacion ya no esta permitida con menos de ${MIN_CANCELLATION_NOTICE_HOURS} horas de anticipacion.`,
+      `La cancelación ya no está permitida con menos de ${MIN_CANCELLATION_NOTICE_HOURS} horas de anticipación.`,
       409,
     );
   }

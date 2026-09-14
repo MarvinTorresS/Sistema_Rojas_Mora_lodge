@@ -141,10 +141,10 @@ const filterBookingsRules = [
 const cancelBookingRules = [
   param('bookingId').isInt({ min: 1 }).withMessage('bookingId debe ser un numero entero positivo.'),
   body('reason')
-    .exists({ checkFalsy: true }).withMessage('El motivo de cancelacion es obligatorio.')
+    .exists({ checkFalsy: true }).withMessage('El motivo de cancelación es obligatorio.')
     .bail()
     .isString().trim().isLength({ min: 1, max: 250 })
-    .withMessage('El motivo de cancelacion debe tener entre 1 y 250 caracteres.'),
+    .withMessage('El motivo de cancelación debe tener entre 1 y 250 caracteres.'),
   body('role').optional().isIn(['Administrador', 'Recepcionista']).withMessage('role no es valido.'),
   body('authorizedByUserId').optional().isInt({ min: 1 }).withMessage('authorizedByUserId debe ser un numero entero positivo.'),
   handleValidationErrors,
