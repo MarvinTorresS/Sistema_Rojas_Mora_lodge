@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { createFieldBooking, listFieldBookings, searchFieldBookings, filterFieldBookingsByStatus } from '../services/reservasCanchaService';
+import { createFieldBooking, listFieldBookings, searchFieldBookings, filterFieldBookingsByStatus, updateFieldBooking } from '../services/reservasCanchaService';
 import DisponibilidadGrid from '../components/DisponibilidadGrid';
 
 /**
@@ -197,6 +197,11 @@ function slotToIsoRange(date, hour) {
   return { startDatetime: start.toISOString(), endDatetime: end.toISOString() };
 }
 
+function toLocalDatetimeInput(value) {
+  const date = new Date(value);
+  return `${isoToLocalDate(value)}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+}
+
 function ReservasCancha() {
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [reservas, setReservas] = useState(RESERVAS_INICIALES);
@@ -214,6 +219,51 @@ function ReservasCancha() {
   const [searchForm, setSearchForm] = useState({ customerName: '', phone: '', date: '' });
   const [searchState, setSearchState] = useState({ status: 'idle', message: '', data: [], meta: null });
   const [searchCriteria, setSearchCriteria] = useState(null);
+  const [editingBooking, setEditingBooking] = useState(null);
+  const [editForm, setEditForm] = useState({ startDatetime: '', endDatetime: '' });
+  const [editState, setEditState] = useState({ status: 'idle', message: '' });
+  const editPanelRef = useRef(null);
+  const searchRequestId = useRef(0);
+  const reservationsRequestId = useRef(0);
+  const isSavingEdit = editState.status === 'loading';
+
+  function handleEdit(booking) {
+    if (isSavingEdit) return;
+    setEditingBooking(booking);
+    setEditForm({ startDatetime: toLocalDatetimeInput(booking.startDatetime), endDatetime: toLocalDatetimeInput(booking.endDatetime) });
+    setEditState({ status: 'idle', message: '' });
+    editPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function cancelEdit() {
+    if (isSavingEdit) return;
+    setEditingBooking(null);
+    setEditForm({ startDatetime: '', endDatetime: '' });
+    setEditState({ status: 'idle', message: '' });
+  }
+
+  async function handleSaveEdit(event) {
+    event.preventDefault();
+    if (isSavingEdit) return;
+    setEditState({ status: 'loading', message: '' });
+    try {
+      await updateFieldBooking(editingBooking.bookingId, {
+        startDatetime: new Date(editForm.startDatetime).toISOString(),
+        endDatetime: new Date(editForm.endDatetime).toISOString(),
+      });
+      setEditingBooking(null);
+      setEditForm({ startDatetime: '', endDatetime: '' });
+      // Conserva la fecha del panel diario y los criterios actuales. Si la
+      // reserva cambia de dia o deja de coincidir, desaparece de esa vista.
+      await Promise.all([
+        loadReservas(), loadStatusFilter(statusFilter),
+        searchCriteria ? loadSearch(searchCriteria, 1) : Promise.resolve(),
+      ]);
+      setEditState({ status: 'success', message: 'Reserva modificada correctamente.' });
+    } catch (error) {
+      setEditState({ status: 'error', message: error.message });
+    }
+  }
 
   // === HU-004 (Alison): filtro de reservas del día por estado ===
   // Opciones tal como las especifica la historia de usuario (no los 6
@@ -273,11 +323,14 @@ function ReservasCancha() {
   // === fin HU-004 ===
 
   async function loadSearch(criteria, page = 1) {
+    const requestId = ++searchRequestId.current;
     setSearchState({ status: 'loading', message: '', data: [], meta: null });
     try {
       const result = await searchFieldBookings({ ...criteria, page });
+      if (requestId !== searchRequestId.current) return;
       setSearchState({ status: 'success', message: '', data: result.data, meta: result.meta });
     } catch (error) {
+      if (requestId !== searchRequestId.current) return;
       setSearchState({ status: 'error', message: error.message, data: [], meta: null });
     }
   }
@@ -299,9 +352,11 @@ function ReservasCancha() {
   // su identidad solo cambie cuando cambia la fecha, y así el useEffect
   // de abajo no se dispare en cada render.
   const loadReservas = useCallback(async () => {
+    const requestId = ++reservationsRequestId.current;
     setListState({ status: 'loading', message: '' });
     try {
       const { data } = await listFieldBookings({ date: formData.date });
+      if (requestId !== reservationsRequestId.current) return;
       setReservas(
         data
           .filter((booking) => SLOT_HOLDING_STATUSES.includes(booking.status))
@@ -309,6 +364,7 @@ function ReservasCancha() {
       );
       setListState({ status: 'idle', message: '' });
     } catch (error) {
+      if (requestId !== reservationsRequestId.current) return;
       setReservas([]);
       setListState({ status: 'error', message: error.message });
     }
@@ -527,7 +583,7 @@ function ReservasCancha() {
                 <div className="mt-2 max-h-64 overflow-auto">
                   <table className="w-full text-left text-xs">
                     <caption className="sr-only">Resultados de búsqueda de reservas de cancha</caption>
-                    <thead><tr>{['Reserva', 'Cliente', 'Teléfono', 'Cancha', 'Inicio', 'Fin', 'Estado'].map((label) => (
+                    <thead><tr>{['Reserva', 'Cliente', 'Teléfono', 'Cancha', 'Inicio', 'Fin', 'Estado', 'Acciones'].map((label) => (
                       <th key={label} scope="col" className="whitespace-nowrap border-b border-line p-2">{label}</th>
                     ))}</tr></thead>
                     <tbody>{visibleSearchResults.map((booking) => (
@@ -539,6 +595,13 @@ function ReservasCancha() {
                         <td className="whitespace-nowrap border-b border-line p-2">{searchDateFormatter.format(new Date(booking.startDatetime))}</td>
                         <td className="whitespace-nowrap border-b border-line p-2">{searchDateFormatter.format(new Date(booking.endDatetime))}</td>
                         <td className="border-b border-line p-2">{SEARCH_STATUS_LABELS[booking.status] ?? booking.status}</td>
+                        <td className="border-b border-line p-2">
+                          <button type="button" disabled={booking.status === 'cancelled' || isSavingEdit}
+                            onClick={() => handleEdit(booking)}
+                            aria-label={`Editar reserva ${booking.bookingId}`}
+                            title={booking.status === 'cancelled' ? 'Una reserva cancelada no puede modificarse.' : 'Editar fecha y horario'}
+                            className="rounded-lg border border-line px-3 py-2 text-primary-800 disabled:opacity-50">Editar</button>
+                        </td>
                       </tr>
                     ))}</tbody>
                   </table>
@@ -631,7 +694,38 @@ function ReservasCancha() {
           (w-80) a propósito, a diferencia de los otros dos bloques: un
           formulario no debería estirarse con la pantalla — inputs
           demasiado anchos son más difíciles de leer, no más útiles. */}
-      <aside className="w-full shrink-0 rounded-xl border border-line bg-surface p-5 shadow-card lg:w-80">
+      <aside ref={editPanelRef} className="w-full shrink-0 rounded-xl border border-line bg-surface p-5 shadow-card lg:w-80">
+        {editState.status === 'success' && <p role="status" className="mb-3 rounded-lg bg-teal-50 p-3 text-sm text-teal-600">{editState.message}</p>}
+        {editingBooking ? (
+          <>
+            <h3 className="font-display text-base font-semibold text-primary-900">Editar reserva #{editingBooking.bookingId}</h3>
+            <p className="mt-2 text-sm text-muted">{editingBooking.customer?.fullName ?? 'Sin nombre'} · {editingBooking.customer?.phone ?? 'Sin teléfono'}</p>
+            <p className="mt-1 text-xs text-muted">{editingBooking.resource?.name} · Cliente y cancha se conservan.</p>
+            <form onSubmit={handleSaveEdit} className="mt-4 space-y-3">
+              <fieldset disabled={isSavingEdit} className="space-y-3">
+                <div>
+                  <label htmlFor="edit-start" className="block text-xs font-medium text-muted">Inicio de la reserva</label>
+                  <input id="edit-start" type="datetime-local" step="1" required value={editForm.startDatetime}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, startDatetime: event.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label htmlFor="edit-end" className="block text-xs font-medium text-muted">Fin de la reserva</label>
+                  <input id="edit-end" type="datetime-local" step="1" required value={editForm.endDatetime}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, endDatetime: event.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm" />
+                </div>
+                <p className="text-xs text-muted">Ajustá el inicio y el fin; la disponibilidad se verifica al guardar.</p>
+                <button type="submit" className="w-full rounded-lg bg-primary-700 px-4 py-2 text-sm text-white disabled:opacity-60">
+                  {isSavingEdit ? 'Guardando…' : 'Guardar cambios'}
+                </button>
+                <button type="button" onClick={cancelEdit} className="w-full rounded-lg border border-line px-4 py-2 text-sm">Cancelar edición</button>
+              </fieldset>
+              {editState.status === 'error' && <p role="alert" className="rounded-lg bg-coral-50 p-3 text-sm text-coral-600">{editState.message}</p>}
+            </form>
+          </>
+        ) : (
+          <>
         <h3 className="font-display text-base font-semibold text-primary-900">
           Nueva reserva
         </h3>
@@ -728,6 +822,8 @@ function ReservasCancha() {
             </button>
           </div>
         </form>
+          </>
+        )}
       </aside>
     </div>
   );

@@ -15,6 +15,21 @@ import api from './api';
 // Mismo prefijo que se montó en el backend: app.use('/api/field-bookings', ...)
 const BASE_PATH = '/field-bookings';
 
+// HU-005: modifica solo fecha y horario de la reserva.
+export async function updateFieldBooking(bookingId, changes) {
+  try {
+    const response = await api.patch(`${BASE_PATH}/${bookingId}`, changes);
+    return response.data.data;
+  } catch (error) {
+    const backendError = error.response?.data?.error;
+    const friendlyError = new Error(backendError?.details?.map((detail) => detail.message).join(' ') ||
+      backendError?.message || 'No se pudo modificar la reserva. Intentá de nuevo.');
+    friendlyError.details = backendError?.details;
+    friendlyError.status = error.response?.status;
+    throw friendlyError;
+  }
+}
+
 /** HU-003: cliente parcial, telefono exacto y fecha de inicio, combinados con AND. */
 export async function searchFieldBookings(params = {}) {
   try {

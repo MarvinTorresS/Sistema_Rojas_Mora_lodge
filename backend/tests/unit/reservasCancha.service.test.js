@@ -14,10 +14,12 @@
 //                             pnpm test -- reservasCancha
 
 jest.mock('../../src/models', () => ({
-  Booking: { findAndCountAll: jest.fn(), findOne: jest.fn(), create: jest.fn() },
+  Booking: { findAndCountAll: jest.fn(), findOne: jest.fn(), findByPk: jest.fn(), create: jest.fn() },
   Resource: { name: 'Resource', findOne: jest.fn() },
   ResourceBlock: { name: 'ResourceBlock', findOne: jest.fn() },
-  Customer: { name: 'Customer', findOrCreate: jest.fn() },
+  Customer: { name: 'Customer', findOrCreate: jest.fn(), findByPk: jest.fn() },
+  AuditLog: { create: jest.fn() },
+  sequelize: { transaction: jest.fn(async (callback) => callback({ LOCK: { UPDATE: 'UPDATE' } })) },
 }));
 
 const { Booking, Resource, ResourceBlock, Customer } = require('../../src/models');
@@ -381,5 +383,116 @@ describe('compatibilidad HTTP HU-001 y HU-002', () => {
     expect(response.status).toBe(200);
     expect(response.body.meta.pageSize).toBe(20);
     expect(response.body.data).toEqual([]);
+  });
+});
+
+describe('HU-005 modificar fechas de reserva', () => {
+  let booking;
+  let start;
+  let end;
+  beforeEach(() => {
+    start = new Date(Date.now() + 3 * 86400000);
+    end = new Date(start.getTime() + 7200000);
+    booking = { bookingId: 15, resourceId: 1, customerId: 4, status: 'active', originChannel: 'staff',
+      startDatetime: start, endDatetime: end, save: jest.fn().mockResolvedValue(),
+      get() { return { bookingId: this.bookingId, resourceId: this.resourceId, customerId: this.customerId,
+        status: this.status, originChannel: this.originChannel, startDatetime: this.startDatetime, endDatetime: this.endDatetime }; },
+    };
+    Booking.findByPk.mockResolvedValue(booking);
+    Booking.findOne.mockResolvedValue(null);
+    Resource.findOne.mockResolvedValue({ resourceId: 1, name: 'Cancha', status: 'available' });
+    ResourceBlock.findOne.mockResolvedValue(null);
+    Customer.findByPk.mockResolvedValue({ customerId: 4, fullName: 'Cliente original', phone: '88887777' });
+  });
+
+  it('CA-1 PATCH modifica solo fechas y devuelve cliente y recurso originales', async () => {
+    const newStart = new Date(start.getTime() + 3600000).toISOString();
+    const response = await request(app).patch('/api/field-bookings/15').send({ startDatetime: newStart });
+    expect(response.status).toBe(200);
+    expect(response.body.data.startDatetime).toBe(newStart);
+    expect(response.body.data.endDatetime).toBe(end.toISOString());
+    expect(response.body.data.customer.customerId).toBe(4);
+    expect(response.body.data.resource.resourceId).toBe(1);
+    expect(booking.save).toHaveBeenCalledWith(expect.objectContaining({ fields: ['startDatetime', 'endDatetime'], transaction: expect.any(Object) }));
+    expect(Customer.findOrCreate).not.toHaveBeenCalled();
+    const options = Booking.findOne.mock.calls[0][0];
+    expect(options.where.bookingId).toEqual({ [Op.ne]: 15 });
+    expect(options.where.resourceId).toBe(1);
+    expect(options.where.startDatetime).toEqual({ [Op.lt]: end });
+    expect(options.where.endDatetime).toEqual({ [Op.gt]: new Date(newStart) });
+  });
+
+  it('permite conservar el mismo intervalo sin conflicto consigo misma', async () => {
+    await expect(service.updateFieldBooking(15, { startDatetime: start.toISOString(), endDatetime: end.toISOString() })).resolves.toMatchObject({ bookingId: 15 });
+    expect(Booking.findOne.mock.calls[1][0].where).toMatchObject({ customerId: 4, bookingId: { [Op.ne]: 15 } });
+  });
+
+  it.each(['recurso', 'cliente', 'bloqueo'])('CA-2 rechaza conflicto de %s sin guardar', async (kind) => {
+    if (kind === 'recurso') Booking.findOne.mockResolvedValueOnce({ bookingId: 20 });
+    if (kind === 'cliente') Booking.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce({ bookingId: 20 });
+    if (kind === 'bloqueo') ResourceBlock.findOne.mockResolvedValueOnce({ blockId: 2 });
+    const response = await request(app).patch('/api/field-bookings/15').send({ endDatetime: end.toISOString() });
+    expect(response.status).toBe(409);
+    expect(booking.save).not.toHaveBeenCalled();
+  });
+
+  it('CA-3 rechaza reserva cancelada', async () => {
+    booking.status = 'cancelled';
+    const response = await request(app).patch('/api/field-bookings/15').send({ endDatetime: end.toISOString() });
+    expect(response.status).toBe(409);
+    expect(booking.save).not.toHaveBeenCalled();
+  });
+
+  it('CA-4 sin regla adicional definida: conserva origen web y estado', async () => {
+    booking.originChannel = 'web';
+    const result = await service.updateFieldBooking(15, { endDatetime: end.toISOString() });
+    expect(result).toMatchObject({ originChannel: 'web', status: 'active' });
+  });
+
+  it('reserva inexistente devuelve 404', async () => {
+    Booking.findByPk.mockResolvedValueOnce(null);
+    expect((await request(app).patch('/api/field-bookings/999').send({ endDatetime: end.toISOString() })).status).toBe(404);
+    expect(booking.save).not.toHaveBeenCalled();
+  });
+
+  it('no permite editar reservas de otros tipos de recurso', async () => {
+    Resource.findOne.mockResolvedValueOnce(null);
+    await expect(service.updateFieldBooking(15, { endDatetime: end.toISOString() })).rejects.toMatchObject({ statusCode: 404 });
+    expect(Resource.findOne).toHaveBeenCalledWith(expect.objectContaining({ where: { resourceId: 1, resourceType: 'field' } }));
+    expect(booking.save).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {}, { customerId: 7 }, { customerName: 'Otro' }, { resourceId: 2 }, { status: 'active' },
+    { originChannel: 'staff' }, { startDatetime: null }, { endDatetime: '' },
+    { startDatetime: '2026-02-30T13:00:00Z' }, { startDatetime: '2026-09-15' },
+    { startDatetime: ['2026-09-15T13:00:00Z'] },
+  ])('rechaza campos no permitidos o invalidos: %j', async (body) => {
+    expect((await request(app).patch('/api/field-bookings/15').send(body)).status).toBe(422);
+    expect(Booking.findByPk).not.toHaveBeenCalled();
+    expect(booking.save).not.toHaveBeenCalled();
+  });
+
+  it.each(['0', '-1', 'abc'])('valida bookingId %s', async (id) => {
+    expect((await request(app).patch('/api/field-bookings/' + id).send({ endDatetime: end.toISOString() })).status).toBe(422);
+  });
+
+  it('rechaza fin anterior al inicio y fecha pasada sin guardar', async () => {
+    await expect(service.updateFieldBooking(15, { endDatetime: new Date(start.getTime() - 1).toISOString() })).rejects.toMatchObject({ statusCode: 422 });
+    await expect(service.updateFieldBooking(15, { startDatetime: '2020-01-01T13:00:00Z' })).rejects.toMatchObject({ statusCode: 422 });
+    expect(booking.save).not.toHaveBeenCalled();
+  });
+
+  it('mantiene la ruta HU-004', async () => {
+    Booking.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+    expect((await request(app).get('/api/field-bookings/filter?status=active')).status).toBe(200);
+    expect((await request(app).get('/api/field-bookings/filter')).status).toBe(422);
+  });
+
+  it('mantiene cancelacion HU-006 dentro de politica', async () => {
+    const response = await request(app).post('/api/field-bookings/15/cancel').send({ reason: 'Cambio solicitado' });
+    expect(response.status).toBe(200);
+    expect(booking.status).toBe('cancelled');
+    expect(booking.cancellationReason).toBe('Cambio solicitado');
   });
 });

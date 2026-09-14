@@ -7,7 +7,7 @@
 // probarla con Jest llamando las funciones directo, sin levantar un
 // servidor Express (ver tests/unit/).
 const { Op } = require('sequelize');
-const { Booking, Resource, ResourceBlock, Customer, AuditLog } = require('../../models');
+const { Booking, Resource, ResourceBlock, Customer, AuditLog, sequelize } = require('../../models');
 
 // CA-4 "Reserva con demasiada anticipacion": limite de dias hacia el
 // futuro para poder registrar una reserva. Definido como constante (no
@@ -362,9 +362,7 @@ module.exports = {
   // duplicar la consulta a Sequelize.
   filterFieldBookingsByStatus,
 
-  // TODO (Kendall — HU-005, CA-1..CA-5): updateFieldBooking(bookingId, changes)
-  // Ojo con CA-4 "Modificacion de reserva ya confirmada (origen web)":
-  // probablemente exige una regla distinta segun originChannel.
+  updateFieldBooking,
 
   // HU-006 (Alison) — Cancelar una reserva existente de cancha sintetica.
   MIN_CANCELLATION_NOTICE_HOURS,
@@ -372,6 +370,53 @@ module.exports = {
 };
 
 // HU-004 (Alison) — ver comentario junto al export.
+// HU-005: CA-4 no define una politica adicional para origen web.
+// Se conservan origen y estado y se aplican las mismas validaciones generales.
+async function updateFieldBooking(bookingId, changes = {}) {
+  return sequelize.transaction(async (transaction) => {
+    const booking = await Booking.findByPk(bookingId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!booking) throw new DomainError('La reserva indicada no existe.', 404);
+    const resource = await Resource.findOne({
+      where: { resourceId: booking.resourceId, resourceType: FIELD_RESOURCE_TYPE },
+      transaction, lock: transaction.LOCK.UPDATE,
+    });
+    if (!resource) throw new DomainError('La reserva no corresponde a una cancha.', 404);
+    if (booking.status === 'cancelled') throw new DomainError('Una reserva cancelada no puede modificarse.', 409);
+    if (resource.status !== 'available') throw new DomainError('La cancha no esta disponible.', 409);
+    const start = new Date(changes.startDatetime ?? booking.startDatetime);
+    const end = new Date(changes.endDatetime ?? booking.endDatetime);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+      throw new DomainError('La hora de fin debe ser posterior a la hora de inicio.', 422);
+    }
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + MAX_ADVANCE_BOOKING_DAYS);
+    if (start < new Date() || start > maxDate) {
+      throw new DomainError('El inicio debe ser futuro y estar dentro de los proximos 30 dias.', 422);
+    }
+    const overlap = {
+      bookingId: { [Op.ne]: booking.bookingId },
+      status: { [Op.in]: ACTIVE_BOOKING_STATUSES },
+      startDatetime: { [Op.lt]: end }, endDatetime: { [Op.gt]: start },
+    };
+    if (await Booking.findOne({ where: { ...overlap, resourceId: booking.resourceId }, transaction })) {
+      throw new DomainError('Ya existe una reserva en ese horario para esta cancha.', 409);
+    }
+    if (await ResourceBlock.findOne({ where: {
+      resourceId: booking.resourceId, isActive: true,
+      startDatetime: { [Op.lt]: end }, endDatetime: { [Op.gt]: start },
+    }, transaction })) throw new DomainError('La cancha esta bloqueada en ese horario.', 409);
+    if (await Booking.findOne({ where: { ...overlap, customerId: booking.customerId }, transaction })) {
+      throw new DomainError('Este cliente ya tiene otra reserva que se cruza con ese horario.', 409);
+    }
+    booking.startDatetime = start;
+    booking.endDatetime = end;
+    await booking.save({ fields: ['startDatetime', 'endDatetime'], transaction });
+    const customer = await Customer.findByPk(booking.customerId, { transaction });
+    return mapBookingRow({ ...booking.get({ plain: true }), resource, customer });
+  });
+}
+
+// HU-004: reutiliza el listado general.
 async function filterFieldBookingsByStatus(query = {}) {
   return listFieldBookings(query);
 }

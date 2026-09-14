@@ -89,12 +89,21 @@ async function cancelBooking(req, res, next) {
   }
 }
 
+async function updateBooking(req, res, next) {
+  try {
+    const booking = await reservasCanchaService.updateFieldBooking(req.params.bookingId, req.body);
+    return res.json({ data: booking });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   createBooking,
   listBookings,
 
   searchBookings,
   filterBookingsByStatus,
-  // TODO (Kendall — HU-005): updateBooking(req, res, next)
+  updateBooking,
   cancelBooking,
 };

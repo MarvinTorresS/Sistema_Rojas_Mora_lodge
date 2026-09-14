@@ -19,6 +19,7 @@ const {
   searchBookingsRules,
   filterBookingsRules,
   cancelBookingRules,
+  updateBookingRules,
 } = require('./reservasCancha.validator');
 
 const router = express.Router();
@@ -39,8 +40,8 @@ router.get('/search', searchBookingsRules, controller.searchBookings);
 // HU-004 (Alison) — filtrar por estado.
 router.get('/filter', filterBookingsRules, controller.filterBookingsByStatus);
 
-// TODO (Kendall — HU-005): modificar una reserva existente.
-// router.patch('/:bookingId', updateBookingRules, controller.updateBooking);
+// HU-005: modificar fecha y horario, conservando cliente y recurso.
+router.patch('/:bookingId', updateBookingRules, controller.updateBooking);
 
 // HU-006 (Alison) — cancelar una reserva existente.
 router.post('/:bookingId/cancel', cancelBookingRules, controller.cancelBooking);

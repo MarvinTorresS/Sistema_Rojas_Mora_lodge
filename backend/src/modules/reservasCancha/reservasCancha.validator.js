@@ -150,7 +150,20 @@ const cancelBookingRules = [
   handleValidationErrors,
 ];
 
+const updateBookingRules = [
+  param('bookingId').isInt({ min: 1 }).withMessage('bookingId debe ser un numero entero positivo.'),
+  body().custom((value) => value && !Array.isArray(value) && typeof value === 'object' &&
+    Object.keys(value).length > 0 && Object.keys(value).every((key) => ['startDatetime', 'endDatetime'].includes(key)))
+    .withMessage('Indique fecha de inicio o fin. Solo se permiten startDatetime y endDatetime.'),
+  ...['startDatetime', 'endDatetime'].map((field) => body(field).optional()
+    .isString().bail().isISO8601({ strict: true, strictSeparator: true }).bail()
+    .custom((value) => /T\d{2}:\d{2}/.test(value) && Number.isFinite(new Date(value).getTime()))
+    .withMessage('Debe indicar una fecha y hora ISO 8601 valida.')),
+  handleValidationErrors,
+];
+
 module.exports = {
+  updateBookingRules,
   createBookingRules,
   listBookingsRules,
   searchBookingsRules,
