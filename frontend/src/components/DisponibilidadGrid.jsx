@@ -106,15 +106,26 @@ const STATUS_STYLES = {
  *   slots: Array<{ hour: number, hourLabel: string, status: 'occupied'|'pending'|'available'|'past', clientName?: string }>,
  *   onSelectSlot: (hour: number) => void,
  *   selectedHour?: number|null,
+ *   backdropStyle?: object,
  * }} props
+ *
+ * `backdropStyle` (Sprint 2, agregado al reutilizar este componente
+ * para el salon de eventos): por defecto usa la foto de la cancha
+ * (FIELD_BACKDROP_STYLE), para que ReservasCancha.jsx siga funcionando
+ * exactamente igual sin tener que tocarlo. Cualquier otro modulo que
+ * reutilice esta grilla (salon, cabanas, mesas) pasa su propio fondo
+ * en vez de copiar el componente completo -- mismo principio de
+ * responsabilidad unica que ya explicaba el comentario de arriba,
+ * ahora tambien abierto a extension (OCP) sin modificar lo que ya
+ * funciona.
  */
-function DisponibilidadGrid({ slots, onSelectSlot, selectedHour }) {
+function DisponibilidadGrid({ slots, onSelectSlot, selectedHour, backdropStyle = FIELD_BACKDROP_STYLE }) {
   return (
     // flex + h-full: el contenedor padre le da a este componente toda
     // la altura disponible de la pantalla (ver ReservasCancha.jsx).
     <div
       className="relative flex h-full flex-col overflow-hidden rounded-xl border border-line shadow-card"
-      style={FIELD_BACKDROP_STYLE}
+      style={backdropStyle}
     >
       {/* 4 columnas fijas desde el ancho "sm": con exactamente 4 slots
           (ver OPENING_HOUR/CLOSING_HOUR/SLOT_DURATION_HOURS en

@@ -14,6 +14,7 @@ import PantallaPendiente from './components/PantallaPendiente.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import SeleccionarEspacio from './pages/SeleccionarEspacio.jsx';
 import ReservasCancha from './pages/ReservasCancha.jsx';
+import ReservasSalon from './pages/ReservasSalon.jsx';
 
 /**
  * Router principal de la aplicación.
@@ -46,11 +47,12 @@ function App() {
           {/* Módulos funcionales (uno por sprint/responsable) */}
           {/* Sprint 1 — Marvin */}
           <Route path="cancha" element={<ReservasCancha />} />
-          {/* Sprint 2 — Wagner */}
-          <Route
-            path="salon"
-            element={<PantallaPendiente titulo="Salón de eventos" huRelacionadas="HU-007 a HU-015" />}
-          />
+          {/* Sprint 2 — Marvin (HU-007, HU-013); HU-014/HU-015 (Kendall) y
+              HU-008 a HU-012, planes de precio (Alison/Wagner) siguen
+              usando esta misma pantalla real: no hace falta un
+              PantallaPendiente aparte por HU, la página ya cubre el
+              flujo de disponibilidad + registro. */}
+          <Route path="salon" element={<ReservasSalon />} />
           {/* Sprint 3 — Kendall */}
           <Route
             path="cabanas"

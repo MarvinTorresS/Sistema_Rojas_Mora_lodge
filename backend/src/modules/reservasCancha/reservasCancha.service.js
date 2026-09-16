@@ -8,6 +8,8 @@
 // servidor Express (ver tests/unit/).
 const { Op } = require('sequelize');
 const { Booking, Resource, ResourceBlock, Customer, AuditLog, sequelize } = require('../../models');
+const { DomainError } = require('../../utils/domainError.util');
+const { buildBookingOverlapWhere, buildBlockOverlapWhere } = require('../../utils/bookingOverlap.util');
 
 // CA-4 "Reserva con demasiada anticipacion": limite de dias hacia el
 // futuro para poder registrar una reserva. Definido como constante (no
@@ -36,11 +38,6 @@ const MIN_CANCELLATION_NOTICE_HOURS = 24;
 // resource.model.js); este modulo solo debe operar sobre canchas.
 const FIELD_RESOURCE_TYPE = 'field';
 
-// Estados de Booking que cuentan como "ocupando" el horario para efectos
-// de deteccion de conflicto. Una reserva 'cancelled' o 'rejected' ya
-// libero el horario y no debe bloquear una reserva nueva.
-const ACTIVE_BOOKING_STATUSES = ['pending', 'active', 'checked_in'];
-
 // Todos los estados que un Booking puede tener (mismos valores que el
 // ENUM de booking.model.js). Se usa en HU-002 para validar el filtro
 // opcional por estado: si llega un valor fuera de esta lista, es un
@@ -53,26 +50,6 @@ const BOOKING_STATUSES = ['pending', 'active', 'rejected', 'checked_in', 'comple
 // que MAX_ADVANCE_BOOKING_DAYS.
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
-
-// Error de dominio con codigo HTTP adjunto. El controller lee
-// `error.statusCode` para decidir la respuesta, sin tener que repetir
-// esa decision (¿es 404? ¿409? ¿422?) en cada catch.
-class DomainError extends Error {
-  constructor(message, statusCode) {
-    super(message);
-    this.name = 'DomainError';
-    this.statusCode = statusCode;
-  }
-}
-
-// Determina si dos intervalos de tiempo [aStart, aEnd) y [bStart, bEnd)
-// se solapan. Formula estandar de interseccion de intervalos: se
-// solapan si el inicio de uno es anterior al fin del otro, en ambos
-// sentidos. Se usa tanto para chocar contra otras reservas como contra
-// bloqueos (mantenimiento).
-function rangesOverlap(aStart, aEnd, bStart, bEnd) {
-  return aStart < bEnd && aEnd > bStart;
-}
 
 // Busca (o crea) el Customer a partir de los datos sueltos que manda el
 // formulario (nombre + telefono). El personal de recepcion no siempre
@@ -132,24 +109,14 @@ async function createFieldBooking(payload) {
   // CA-2: Conflicto de horario — contra otras reservas activas de ESTE
   // recurso y contra bloqueos vigentes (mantenimiento, uso interno).
   const overlappingBooking = await Booking.findOne({
-    where: {
-      resourceId,
-      status: { [Op.in]: ACTIVE_BOOKING_STATUSES },
-      startDatetime: { [Op.lt]: end },
-      endDatetime: { [Op.gt]: start },
-    },
+    where: { resourceId, ...buildBookingOverlapWhere({ start, end }) },
   });
   if (overlappingBooking) {
     throw new DomainError('Ya existe una reserva en ese horario para esta cancha.', 409);
   }
 
   const overlappingBlock = await ResourceBlock.findOne({
-    where: {
-      resourceId,
-      isActive: true,
-      startDatetime: { [Op.lt]: end },
-      endDatetime: { [Op.gt]: start },
-    },
+    where: { resourceId, ...buildBlockOverlapWhere({ start, end }) },
   });
   if (overlappingBlock) {
     throw new DomainError(`La cancha esta bloqueada en ese horario (${overlappingBlock.reason}).`, 409);
@@ -161,12 +128,7 @@ async function createFieldBooking(payload) {
   // recurso (no puede estar, a la vez, jugando en la cancha y con otra
   // reserva que se cruce en el tiempo).
   const overlappingForCustomer = await Booking.findOne({
-    where: {
-      customerId: customer.customerId,
-      status: { [Op.in]: ACTIVE_BOOKING_STATUSES },
-      startDatetime: { [Op.lt]: end },
-      endDatetime: { [Op.gt]: start },
-    },
+    where: { customerId: customer.customerId, ...buildBookingOverlapWhere({ start, end }) },
   });
   if (overlappingForCustomer) {
     throw new DomainError('Este cliente ya tiene otra reserva que se cruza con ese horario.', 409);
@@ -343,7 +305,6 @@ module.exports = {
   BOOKING_STATUSES,
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
-  rangesOverlap,
   createFieldBooking,
 
   // HU-002 (Wagner)
@@ -393,18 +354,14 @@ async function updateFieldBooking(bookingId, changes = {}) {
     if (start < new Date() || start > maxDate) {
       throw new DomainError('El inicio debe ser futuro y estar dentro de los proximos 30 dias.', 422);
     }
-    const overlap = {
-      bookingId: { [Op.ne]: booking.bookingId },
-      status: { [Op.in]: ACTIVE_BOOKING_STATUSES },
-      startDatetime: { [Op.lt]: end }, endDatetime: { [Op.gt]: start },
-    };
+    const overlap = buildBookingOverlapWhere({ start, end, excludeBookingId: booking.bookingId });
     if (await Booking.findOne({ where: { ...overlap, resourceId: booking.resourceId }, transaction })) {
       throw new DomainError('Ya existe una reserva en ese horario para esta cancha.', 409);
     }
-    if (await ResourceBlock.findOne({ where: {
-      resourceId: booking.resourceId, isActive: true,
-      startDatetime: { [Op.lt]: end }, endDatetime: { [Op.gt]: start },
-    }, transaction })) throw new DomainError('La cancha esta bloqueada en ese horario.', 409);
+    if (await ResourceBlock.findOne({
+      where: { resourceId: booking.resourceId, ...buildBlockOverlapWhere({ start, end }) },
+      transaction,
+    })) throw new DomainError('La cancha esta bloqueada en ese horario.', 409);
     if (await Booking.findOne({ where: { ...overlap, customerId: booking.customerId }, transaction })) {
       throw new DomainError('Este cliente ya tiene otra reserva que se cruza con ese horario.', 409);
     }

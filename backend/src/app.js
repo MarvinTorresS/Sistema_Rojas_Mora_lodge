@@ -34,6 +34,14 @@ app.get('/api/health', (req, res) => {
 // prefijo. Se agregan a medida que cada sprint las va completando.
 app.use('/api/field-bookings', require('./modules/reservasCancha/reservasCancha.routes'));
 
+// Sprint 2 (Marvin) — reservas del salon de eventos (HU-007, HU-013 a
+// HU-015).
+app.use('/api/hall-bookings', require('./modules/reservasSalon/reservasSalon.routes'));
+
+// TODO (Alison/Wagner, Sprint 2): montar aqui el CRUD de planes de
+// precio del salon (HU-008 a HU-012), ej.
+// app.use('/api/event-hall-plans', require('./modules/reservasSalon/eventHallPlans.routes'));
+
 // --- Manejo de rutas y errores (siempre al final) ---
 app.use(notFoundHandler);
 app.use(errorHandler);
