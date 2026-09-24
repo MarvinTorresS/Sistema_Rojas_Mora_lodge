@@ -38,9 +38,10 @@ app.use('/api/field-bookings', require('./modules/reservasCancha/reservasCancha.
 // HU-015).
 app.use('/api/hall-bookings', require('./modules/reservasSalon/reservasSalon.routes'));
 
-// TODO (Alison/Wagner, Sprint 2): montar aqui el CRUD de planes de
-// precio del salon (HU-008 a HU-012), ej.
-// app.use('/api/event-hall-plans', require('./modules/reservasSalon/eventHallPlans.routes'));
+// Sprint 2 — CRUD de planes de precio del salon de eventos (HU-008 a
+// HU-012). HU-010/HU-011/HU-012 implementadas por Wagner; HU-008 y
+// HU-009 (Alison) quedan como TODO dentro del propio router.
+app.use('/api/event-hall-plans', require('./modules/reservasSalon/eventHallPlans.routes'));
 
 // --- Manejo de rutas y errores (siempre al final) ---
 app.use(notFoundHandler);

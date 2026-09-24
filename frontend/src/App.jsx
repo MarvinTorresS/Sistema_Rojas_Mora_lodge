@@ -15,6 +15,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import SeleccionarEspacio from './pages/SeleccionarEspacio.jsx';
 import ReservasCancha from './pages/ReservasCancha.jsx';
 import ReservasSalon from './pages/ReservasSalon.jsx';
+import AdminPlanesSalon from './pages/AdminPlanesSalon.jsx';
 
 /**
  * Router principal de la aplicación.
@@ -47,12 +48,19 @@ function App() {
           {/* Módulos funcionales (uno por sprint/responsable) */}
           {/* Sprint 1 — Marvin */}
           <Route path="cancha" element={<ReservasCancha />} />
-          {/* Sprint 2 — Marvin (HU-007, HU-013); HU-014/HU-015 (Kendall) y
-              HU-008 a HU-012, planes de precio (Alison/Wagner) siguen
-              usando esta misma pantalla real: no hace falta un
-              PantallaPendiente aparte por HU, la página ya cubre el
-              flujo de disponibilidad + registro. */}
+          {/* Sprint 2 — Marvin (HU-007, HU-013) y Kendall (HU-014/HU-015):
+              flujo de disponibilidad + registro de reserva del salón. */}
           <Route path="salon" element={<ReservasSalon />} />
+          {/* Sprint 2 — CRUD de planes de precio del salón (HU-008 a
+              HU-012). El comentario anterior asumía que esto entraba en
+              la misma pantalla de arriba, pero ReservasSalon.jsx solo
+              cubre el flujo de RESERVA (con una lista de planes fija,
+              ver TODO de HU-009 ahí); administrar los planes en sí
+              (buscar/editar/eliminar) necesita su propia pantalla.
+              Wagner implementó HU-010/HU-011/HU-012 acá; cuando a Alison
+              le toque HU-008 (crear) y HU-009 (listar todos), amplía
+              esta misma página en vez de crear una tercera. */}
+          <Route path="salon/planes" element={<AdminPlanesSalon />} />
           {/* Sprint 3 — Kendall */}
           <Route
             path="cabanas"
