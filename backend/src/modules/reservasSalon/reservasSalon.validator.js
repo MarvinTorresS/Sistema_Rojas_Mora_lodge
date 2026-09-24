@@ -12,7 +12,7 @@
 //
 // Igual que en reservasCancha.validator.js: esto solo valida FORMA,
 // nunca reglas de negocio (eso es del service).
-const { body, query, validationResult } = require('express-validator');
+const { body, param, query, validationResult } = require('express-validator');
 
 // NOTA (duplicado intencional, no un descuido): esta misma funcion ya
 // existe en reservasCancha.validator.js. Es identica y 100% generica
@@ -88,7 +88,45 @@ const createHallBookingRules = [
   handleValidationErrors,
 ];
 
+const bookingIdRules = [
+  param('bookingId').isInt({ min: 1 }).withMessage('bookingId debe ser un entero positivo.'),
+  handleValidationErrors,
+];
+
+const listHallBookingsRules = [
+  query('page').optional().isInt({ min: 1, max: 1000000 }),
+  query('pageSize').optional().isInt({ min: 1, max: 100 }),
+  handleValidationErrors,
+];
+
+const updateHallBookingRules = [
+  param('bookingId').isInt({ min: 1 }).withMessage('bookingId debe ser un entero positivo.'),
+  body().custom((value) => value && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).length > 0 && Object.keys(value).every((key) => ['planId', 'startDatetime', 'endDatetime'].includes(key)))
+    .withMessage('Indique plan, inicio o fin. Solo se permiten planId, startDatetime y endDatetime.'),
+  body('planId').optional().isInt({ min: 1 }).withMessage('planId debe ser un entero positivo.'),
+  ...['startDatetime', 'endDatetime'].map((field) => body(field).optional()
+    .isString().bail().isISO8601({ strict: true, strictSeparator: true }).bail()
+    .custom((value) => /T\d{2}:\d{2}/.test(value) && Number.isFinite(new Date(value).getTime()))
+    .withMessage('Debe indicar una fecha y hora ISO 8601 valida.')),
+  handleValidationErrors,
+];
+
+const cancelHallBookingRules = [
+  param('bookingId').isInt({ min: 1 }).withMessage('bookingId debe ser un entero positivo.'),
+  body().custom((value) => value === undefined || (value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).every((key) => key === 'cancellationReason')))
+    .withMessage('Solo se permite cancellationReason.'),
+  body('cancellationReason').optional().isString().bail().trim().isLength({ max: 250 })
+    .withMessage('El motivo debe tener como maximo 250 caracteres.'),
+  handleValidationErrors,
+];
+
 module.exports = {
+  cancelHallBookingRules,
+  bookingIdRules,
+  listHallBookingsRules,
+  updateHallBookingRules,
   handleValidationErrors,
   checkAvailabilityRules,
   createHallBookingRules,

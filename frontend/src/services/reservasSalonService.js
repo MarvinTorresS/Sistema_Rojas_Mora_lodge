@@ -10,6 +10,34 @@ import api from './api';
 // Mismo prefijo montado en el backend: app.use('/api/hall-bookings', ...)
 const BASE_PATH = '/hall-bookings';
 
+export async function cancelHallBooking(bookingId, payload = {}) {
+  try {
+    const response = await api.post(`${BASE_PATH}/${bookingId}/cancel`, payload);
+    return response.data.data;
+  } catch (error) { throw toFriendlyError(error, 'No se pudo cancelar la reserva.'); }
+}
+
+export async function listHallBookings(params = {}) {
+  try {
+    const response = await api.get(BASE_PATH, { params });
+    return response.data;
+  } catch (error) { throw toFriendlyError(error, 'No se pudieron cargar las reservas del salón.'); }
+}
+
+export async function getHallBooking(bookingId) {
+  try {
+    const response = await api.get(`${BASE_PATH}/${bookingId}`);
+    return response.data.data;
+  } catch (error) { throw toFriendlyError(error, 'No se pudo cargar la reserva.'); }
+}
+
+export async function updateHallBooking(bookingId, changes) {
+  try {
+    const response = await api.patch(`${BASE_PATH}/${bookingId}`, changes);
+    return response.data.data;
+  } catch (error) { throw toFriendlyError(error, 'No se pudo modificar la reserva.'); }
+}
+
 function toFriendlyError(error, fallbackMessage) {
   const backendError = error.response?.data?.error;
   const friendlyError = new Error(

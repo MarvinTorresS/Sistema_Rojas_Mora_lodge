@@ -1,26 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { checkHallAvailability, createHallBooking } from '../services/reservasSalonService';
+import { checkHallAvailability, createHallBooking, listHallBookings, getHallBooking, updateHallBooking, cancelHallBooking } from '../services/reservasSalonService';
 
 /**
  * Pagina del modulo de reservas del salon de eventos.
  *
- * Alcance de esta sesion (Sprint 2, Marvin): SOLO HU-007 (consultar
- * disponibilidad) y HU-013 (registrar reserva con plan). HU-014
- * (modificar, Kendall) y HU-015 (cancelar, Kendall) llegan cuando le
- * toque su parte del sprint -- no hay lista ni tabla de reservas del
- * salon aca todavia, porque esa vista (equivalente a HU-002 de
- * cancha) no existe como historia de usuario en este sprint.
+ * HU-007/HU-013: disponibilidad y alta con plan. HU-014 agrega un
+ * listado paginado y edicion de fechas con estado independiente.
+ * HU-015 agrega cancelacion con confirmacion independiente de la edicion.
  *
  * Por que NO reutiliza DisponibilidadGrid.jsx (a pesar del comentario
  * en ese archivo que invitaba a reutilizarlo para el salon): esa
  * grilla pinta el dia completo con el nombre de cada cliente que ya
  * tiene una celda ocupada, y esos datos salen de listar TODAS las
  * reservas del dia (GET .../field-bookings?date=..., HU-002 de
- * cancha). El salon no tiene un endpoint de listado en este sprint
- * (no es ninguna de las HU-007 a HU-015), asi que no hay de donde
- * sacar esa informacion sin inventar una consulta que nadie pidio.
+ * cancha). El listado paginado de HU-014 sirve para seleccionar una
+ * reserva a editar, no representa toda la disponibilidad del dia.
  *
  * Diseno visual (16/09/2026): en vez del formulario clasico de campos
  * apilados, se exploraron 3 propuestas en Figma con Marvin y se eligio
@@ -277,7 +273,205 @@ function ReservationConfirmationPanel({ confirmation, onReset }) {
   );
 }
 
+function localDatetime(value) {
+  const date = new Date(value);
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+// HU-014: estado independiente del alta y datos obtenidos del servidor,
+// incluso despues de recargar la pagina o crear otra reserva.
+export function ExistingHallBookings({ refreshVersion = 0, onUpdated }) {
+  const [list, setList] = useState({ data: [], meta: null, loading: true, error: '' });
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState(null);
+  const [draft, setDraft] = useState({ planId: '', startDatetime: '', endDatetime: '' });
+  const [savedPricing, setSavedPricing] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isCancelling, setIsCancelling] = useState(false);
+  const cancelRequest = useRef(false);
+  const [feedback, setFeedback] = useState({ status: 'idle', message: '' });
+  const requestId = useRef(0);
+  const busy = isCancelling || feedback.status === 'loading' || feedback.status === 'saving';
+  const load = useCallback(async () => {
+    const id = ++requestId.current;
+    setList((prev) => ({ ...prev, loading: true, error: '' }));
+    try {
+      const result = await listHallBookings({ page, pageSize: 20 });
+      if (id === requestId.current) setList({ ...result, loading: false, error: '' });
+    } catch (error) {
+      if (id === requestId.current) setList((prev) => ({ ...prev, loading: false, error: error.message }));
+    }
+  }, [page]);
+  useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load, refreshVersion]);
+
+  async function edit(bookingId) {
+    setSavedPricing(null);
+    setFeedback({ status: 'loading', message: 'Cargando reserva…' });
+    try {
+      const booking = await getHallBooking(bookingId);
+      if (booking.status === 'cancelled') throw new Error('Una reserva cancelada no puede modificarse.');
+      setSelected(booking);
+      setDraft({ planId: booking.plan?.planId ?? '', startDatetime: localDatetime(booking.startDatetime), endDatetime: localDatetime(booking.endDatetime) });
+      setFeedback({ status: 'idle', message: '' });
+    } catch (error) { setFeedback({ status: 'error', message: error.message }); }
+  }
+
+  function cancel() {
+    setDraft({ planId: '', startDatetime: '', endDatetime: '' });
+    setSavedPricing(null);
+    setSelected(null);
+    setFeedback({ status: 'idle', message: '' });
+  }
+
+  async function save(event) {
+    event.preventDefault();
+    if (busy) return;
+    setFeedback({ status: 'saving', message: 'Guardando cambios…' });
+    try {
+      const result = await updateHallBooking(selected.bookingId, {
+        ...(Number(draft.planId) !== selected.plan?.planId && draft.planId !== '' ? { planId: Number(draft.planId) } : {}),
+        startDatetime: new Date(draft.startDatetime).toISOString(),
+        endDatetime: new Date(draft.endDatetime).toISOString(),
+      });
+      cancel();
+      setSavedPricing(result.pricing ?? null);
+      onUpdated?.();
+      await load();
+      setFeedback({ status: 'success', message: 'Reserva modificada correctamente.' });
+    } catch (error) { setFeedback({ status: 'error', message: error.message }); }
+  }
+
+  function openCancellation(booking) {
+    setCancelTarget(booking);
+    setCancelReason('');
+    setSavedPricing(null);
+    setFeedback({ status: 'idle', message: '' });
+  }
+
+  function closeCancellation() {
+    if (cancelRequest.current) return;
+    setCancelTarget(null);
+    setCancelReason('');
+    setFeedback({ status: 'idle', message: '' });
+  }
+
+  async function confirmCancellation(event) {
+    event.preventDefault();
+    if (cancelRequest.current) return;
+    cancelRequest.current = true;
+    setIsCancelling(true);
+    setFeedback({ status: 'idle', message: '' });
+    try {
+      const result = await cancelHallBooking(cancelTarget.bookingId,
+        cancelReason.trim() ? { cancellationReason: cancelReason.trim() } : {});
+      // Reflejar el resultado aun si falla la recarga posterior del listado.
+      setList((prev) => ({ ...prev, data: prev.data.map((booking) => booking.bookingId === result.bookingId ? { ...booking, ...result } : booking) }));
+      setCancelTarget(null);
+      setCancelReason('');
+      onUpdated?.();
+      await load();
+      setFeedback({ status: 'success', message: 'Reserva cancelada correctamente. No se ha realizado ninguna devolución.' });
+    } catch (error) {
+      setFeedback({ status: 'error', message: error.message });
+    } finally {
+      cancelRequest.current = false;
+      setIsCancelling(false);
+    }
+  }
+
+  const dateLabel = (value) => new Date(value).toLocaleString('es-CR');
+  const editPlan = selected?.availablePlans?.find((plan) => plan.planId === Number(draft.planId)) ?? selected?.plan;
+  const depositRate = selected?.depositPercentage ?? DEPOSIT_PERCENTAGE_PREVIEW;
+  const requiredAmount = (price) => Math.round(Math.round(Number(price) * 100) * depositRate) / 100;
+  const money = (value) => new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'CRC', minimumFractionDigits: 2 }).format(value);
+  return (
+    <section aria-label="Administrar reservas existentes" className="rounded-xl border border-line bg-surface p-4 shadow-card">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-display text-lg font-semibold">Reservas existentes</h3>
+        <button type="button" onClick={load} disabled={list.loading || busy} className="rounded-lg border border-line px-3 py-2">Actualizar reservas</button>
+      </div>
+      {list.loading && <p role="status">Cargando reservas…</p>}
+      {list.error && <p role="alert">{list.error}</p>}
+      {feedback.message && <p role={feedback.status === 'error' ? 'alert' : 'status'} className="my-3">{feedback.message}</p>}
+      {savedPricing && <div aria-label="Importes confirmados" className="my-3 rounded-lg bg-primary-50 p-3 text-sm">
+        <p>Precio actual del plan: {money(savedPricing.price)}</p>
+        <p>Anticipo requerido: {money(savedPricing.depositAmount)}</p>
+        <p>Diferencia de anticipo requerido: {money(savedPricing.depositDifference)}</p>
+        <p>Estos importes no representan pagos realizados ni saldo pendiente.</p>
+      </div>}
+      {selected ? (
+        <form onSubmit={save} className="mt-4 space-y-3">
+          <h4 className="font-semibold">Editar reserva #{selected.bookingId}</h4>
+          <p>{selected.customer?.fullName} · {selected.customer?.phone} · {selected.plan?.planName}</p>
+          <p className="text-sm text-muted">Cliente, salón, estado y origen se conservan.</p>
+          <fieldset disabled={busy} className="flex flex-wrap gap-3">
+            <label>Plan de la reserva<select aria-label="Plan de la reserva" value={draft.planId}
+              onChange={(event) => setDraft((prev) => ({ ...prev, planId: event.target.value }))} className="block rounded border border-faint p-2">
+              {!selected.plan && <option value="">Sin plan</option>}
+              {(selected.availablePlans ?? (selected.plan ? [selected.plan] : [])).map((plan) => <option key={plan.planId} value={plan.planId}>{plan.planName}</option>)}
+            </select></label>
+            <label>Inicio de la reserva<input aria-label="Inicio de la reserva" type="datetime-local" step="1" required value={draft.startDatetime}
+              onChange={(event) => setDraft((prev) => ({ ...prev, startDatetime: event.target.value }))} className="block rounded border border-faint p-2" /></label>
+            <label>Fin de la reserva<input aria-label="Fin de la reserva" type="datetime-local" step="1" required value={draft.endDatetime}
+              onChange={(event) => setDraft((prev) => ({ ...prev, endDatetime: event.target.value }))} className="block rounded border border-faint p-2" /></label>
+            <button type="submit" className="rounded-lg bg-primary-700 px-4 py-2 text-white">Guardar cambios</button>
+            <button type="button" onClick={cancel} className="rounded-lg border border-line px-4 py-2">Cancelar edición</button>
+          </fieldset>
+          {editPlan && Number.isFinite(editPlan.price) && <div aria-label="Vista previa del plan" className="rounded-lg bg-primary-50 p-3 text-sm">
+            <p>Precio del plan: {money(editPlan.price)}</p>
+            <p>Anticipo requerido ({Math.round(depositRate * 100)}%): {money(requiredAmount(editPlan.price))}</p>
+            {Number.isFinite(selected.plan?.price) && <p>Diferencia de anticipo requerido: {money(requiredAmount(editPlan.price) - requiredAmount(selected.plan.price))}</p>}
+            <p>Vista previa con precios actuales. No representa pagos realizados ni saldo pendiente.</p>
+          </div>}
+        </form>
+      ) : cancelTarget ? (
+        <form aria-label="Confirmar cancelación de reserva" onSubmit={confirmCancellation} onKeyDown={(event) => {
+          if (event.key === 'Escape') closeCancellation();
+        }} className="mt-4 space-y-3 rounded-lg border border-line p-4">
+          <h4 className="font-semibold">¿Cancelar reserva #{cancelTarget.bookingId}?</h4>
+          <p>{cancelTarget.customer?.fullName} · {cancelTarget.plan?.planName}</p>
+          <p>{dateLabel(cancelTarget.startDatetime)} — {dateLabel(cancelTarget.endDatetime)}</p>
+          <p>La reserva dejará de ocupar este horario. Esta acción no realiza pagos ni devoluciones.</p>
+          <fieldset disabled={isCancelling} className="space-y-3">
+            <label className="block">Motivo (opcional)<textarea aria-label="Motivo de cancelación" maxLength={250} value={cancelReason}
+              onChange={(event) => setCancelReason(event.target.value)} className="block w-full rounded border border-faint p-2" /></label>
+            <button type="button" autoFocus onClick={closeCancellation} className="mr-3 rounded-lg border border-line px-4 py-2">Volver</button>
+            <button type="submit" className="rounded-lg bg-primary-700 px-4 py-2 text-white">{isCancelling ? 'Cancelando…' : 'Confirmar cancelación'}</button>
+          </fieldset>
+        </form>
+      ) : (
+        <>
+          {!list.loading && !list.error && list.data.length === 0 && <p className="mt-3">No hay reservas del salón.</p>}
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <caption className="sr-only">Reservas del salón</caption>
+              <thead><tr>{['Reserva', 'Cliente', 'Teléfono', 'Inicio', 'Fin', 'Plan', 'Estado', 'Origen', 'Acciones'].map((label) => <th key={label} scope="col" className="p-2">{label}</th>)}</tr></thead>
+              <tbody>{list.data.map((booking) => <tr key={booking.bookingId}>
+                <td className="p-2">#{booking.bookingId}</td><td>{booking.customer?.fullName}</td><td>{booking.customer?.phone}</td>
+                <td>{dateLabel(booking.startDatetime)}</td><td>{dateLabel(booking.endDatetime)}</td><td>{booking.plan?.planName ?? 'Sin plan'}</td>
+                <td>{booking.status === 'cancelled' ? 'Cancelada' : booking.status}</td><td>{booking.originChannel}</td>
+                <td><button type="button" aria-label={`Editar reserva ${booking.bookingId}`} disabled={busy || booking.status === 'cancelled'}
+                  onClick={() => edit(booking.bookingId)} className="rounded-lg border border-line px-3 py-2 disabled:opacity-50">Editar</button>
+                  <button type="button" aria-label={`Cancelar reserva ${booking.bookingId}`} disabled={busy || booking.status === 'cancelled'}
+                    onClick={() => openCancellation(booking)} className="ml-2 rounded-lg border border-line px-3 py-2 disabled:opacity-50">Cancelar reserva</button></td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <button type="button" disabled={busy || list.loading || page <= 1} onClick={() => setPage((prev) => prev - 1)}>Anterior</button>
+            <span>Página {page} · {list.meta?.total ?? 0} reservas</span>
+            <button type="button" disabled={busy || list.loading || page >= (list.meta?.totalPages ?? 0)} onClick={() => setPage((prev) => prev + 1)}>Siguiente</button>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function ReservasSalon() {
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [queryForm, setQueryForm] = useState(INITIAL_QUERY);
   const [availability, setAvailability] = useState({ status: 'idle', available: null, reason: null, message: '' });
   const [bookingForm, setBookingForm] = useState(INITIAL_BOOKING_FORM);
@@ -337,6 +531,7 @@ function ReservasSalon() {
         endDatetime: toIsoDatetime(date, endTime),
       });
       setConfirmation(result);
+      setRefreshVersion((value) => value + 1);
       setBookingFeedback({ status: 'success', message: 'Reserva registrada correctamente.' });
       setBookingForm(INITIAL_BOOKING_FORM);
       // La disponibilidad consultada ya no aplica: el horario que
@@ -368,6 +563,11 @@ function ReservasSalon() {
         <h2 className="mt-3 font-display text-2xl font-semibold text-primary-900">Salon de eventos</h2>
         <p className="text-sm text-muted">Elegi el plan, consulta disponibilidad y confirma la reserva con el deposito.</p>
       </div>
+
+      <ExistingHallBookings refreshVersion={refreshVersion} onUpdated={() => {
+        setAvailability({ status: 'idle', available: null, reason: null, message: '' });
+        setConfirmation(null);
+      }} />
 
       {/* El <form> con sus 2 columnas queda SIEMPRE montado, tambien
           despues de confirmar una reserva -- ver el comentario grande

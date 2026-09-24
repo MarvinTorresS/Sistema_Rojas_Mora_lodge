@@ -6,14 +6,11 @@
 // montado bajo su propio prefijo (/api/event-hall-plans) por quien
 // tenga esas HU este sprint (ver comentario en app.js).
 //
-// Misma convencion que reservasCancha.routes.js: las 4 rutas de este
-// modulo se declaran desde el inicio, aunque solo HU-007 y HU-013
-// tienen logica implementada, para que este archivo compartido quede
-// estable. Cuando a Kendall le toque HU-014/HU-015, reemplaza
-// UNICAMENTE su propia linea de router.<verbo>(...).
+// HU-007, HU-013, HU-014 y HU-015 implementadas. Mantener las rutas
+// estaticas antes de /:bookingId.
 const express = require('express');
 const controller = require('./reservasSalon.controller');
-const { checkAvailabilityRules, createHallBookingRules } = require('./reservasSalon.validator');
+const { checkAvailabilityRules, createHallBookingRules, bookingIdRules, listHallBookingsRules, updateHallBookingRules, cancelHallBookingRules } = require('./reservasSalon.validator');
 
 const router = express.Router();
 
@@ -27,11 +24,13 @@ router.get('/availability', checkAvailabilityRules, controller.checkAvailability
 router.post('/', createHallBookingRules, controller.createBooking);
 
 // HU-014 (Kendall) — Modificar una reserva existente del salon de
-// eventos (fecha, horario o plan).
-// TODO (Kendall, Sprint 2): PATCH /:bookingId
+// eventos: consulta y edicion de plan, fecha y horario.
+router.get('/', listHallBookingsRules, controller.listBookings);
+router.get('/:bookingId', bookingIdRules, controller.getBooking);
+router.patch('/:bookingId', updateHallBookingRules, controller.updateBooking);
 
 // HU-015 (Kendall) — Cancelar una reserva existente del salon de
 // eventos.
-// TODO (Kendall, Sprint 2): POST /:bookingId/cancel
+router.post('/:bookingId/cancel', cancelHallBookingRules, controller.cancelBooking);
 
 module.exports = router;

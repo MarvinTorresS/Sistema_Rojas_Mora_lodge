@@ -6,7 +6,7 @@
 // datos ya validados en su FORMA y lanza DomainError con un
 // statusCode cuando una regla de NEGOCIO falla.
 const {
-  Booking, Resource, ResourceBlock, EventHallPricingPlan, Customer,
+  Booking, Resource, ResourceBlock, EventHallPricingPlan, Customer, sequelize,
 } = require('../../models');
 const { DomainError } = require('../../utils/domainError.util');
 const { buildBookingOverlapWhere, buildBlockOverlapWhere } = require('../../utils/bookingOverlap.util');
@@ -197,7 +197,7 @@ async function createHallBooking(payload) {
   // CA-3: calculo automatico del anticipo. Se redondea a 2 decimales
   // (moneda) para no arrastrar errores de punto flotante hacia la
   // factura/pago (HU-073, Sprint 7).
-  const depositAmount = Math.round(Number(plan.price) * EVENT_HALL_DEPOSIT_PERCENTAGE * 100) / 100;
+  const depositAmount = requiredDeposit(plan.price);
 
   return {
     booking,
@@ -207,7 +207,151 @@ async function createHallBooking(payload) {
   };
 }
 
+function requiredDeposit(price) {
+  const priceCents = Math.round(Number(price) * 100);
+  return Math.round(priceCents * EVENT_HALL_DEPOSIT_PERCENTAGE) / 100;
+}
+
+function mapPlan(plan) {
+  return { planId: plan.planId, planName: plan.planName, hours: plan.hours, price: Number(plan.price) };
+}
+
+// HU-014: DTO explicito; nunca exponer credenciales del cliente.
+function mapHallBooking(booking) {
+  const row = typeof booking.get === 'function' ? booking.get({ plain: true }) : booking;
+  return {
+    bookingId: row.bookingId, startDatetime: row.startDatetime, endDatetime: row.endDatetime,
+    status: row.status, originChannel: row.originChannel,
+    resource: row.resource ? { resourceId: row.resource.resourceId, name: row.resource.name } : null,
+    customer: row.customer ? { customerId: row.customer.customerId, fullName: row.customer.fullName, phone: row.customer.phone } : null,
+    plan: row.eventHallPlan ? mapPlan(row.eventHallPlan) : null,
+  };
+}
+
+function hallBookingIncludes() {
+  return [
+    { model: Resource, as: 'resource', required: true, where: { resourceType: EVENT_HALL_RESOURCE_TYPE } },
+    { model: Customer, as: 'customer', attributes: ['customerId', 'fullName', 'phone'] },
+    { model: EventHallPricingPlan, as: 'eventHallPlan', attributes: ['planId', 'planName', 'hours', 'price'] },
+  ];
+}
+
+async function listHallBookings({ page = 1, pageSize = 20 } = {}) {
+  page = Number(page);
+  pageSize = Number(pageSize);
+  const { rows, count } = await Booking.findAndCountAll({
+    include: hallBookingIncludes(), distinct: true,
+    order: [['startDatetime', 'DESC'], ['bookingId', 'DESC']],
+    limit: pageSize, offset: (page - 1) * pageSize,
+  });
+  return { items: rows.map(mapHallBooking), page, pageSize, total: count, totalPages: Math.ceil(count / pageSize) };
+}
+
+async function getHallBooking(bookingId, options = {}) {
+  const booking = await Booking.findOne({ where: { bookingId }, include: hallBookingIncludes(), ...options });
+  if (!booking) throw new DomainError('La reserva del salon indicada no existe.', 404);
+  const result = mapHallBooking(booking);
+  const plans = await EventHallPricingPlan.findAll({
+    where: { resourceId: result.resource.resourceId }, order: [['planId', 'ASC']], ...options,
+  });
+  return { ...result, availablePlans: plans.map(mapPlan), depositPercentage: EVENT_HALL_DEPOSIT_PERCENTAGE };
+}
+
+async function updateHallBooking(bookingId, changes = {}) {
+  return sequelize.transaction(async (transaction) => {
+    const booking = await Booking.findByPk(bookingId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!booking) throw new DomainError('La reserva del salon indicada no existe.', 404);
+    const resource = await Resource.findOne({
+      where: { resourceId: booking.resourceId, resourceType: EVENT_HALL_RESOURCE_TYPE },
+      transaction, lock: transaction.LOCK.UPDATE,
+    });
+    if (!resource) throw new DomainError('La reserva no pertenece a un salon de eventos.', 404);
+    if (booking.status === 'cancelled') throw new DomainError('Una reserva cancelada no puede modificarse.', 409);
+    if (resource.status !== 'available') throw new DomainError('El salon no esta disponible actualmente.', 409);
+    let pricing;
+    let nextPlan;
+    if (changes.planId !== undefined) {
+      // Comparar precios vigentes: Booking no conserva el precio historico.
+      const plans = await EventHallPricingPlan.findAll({
+        where: { resourceId: booking.resourceId }, order: [['planId', 'ASC']],
+        transaction, lock: transaction.LOCK.UPDATE,
+      });
+      nextPlan = plans.find((plan) => plan.planId === Number(changes.planId));
+      if (!nextPlan) throw new DomainError('El plan indicado no existe para este salon.', 404);
+      const previousPlan = plans.find((plan) => plan.planId === booking.eventHallPlanId);
+      if (!previousPlan) throw new DomainError('No se puede calcular el anticipo anterior: la reserva no tiene un plan valido.', 409);
+      const depositAmount = requiredDeposit(nextPlan.price);
+      const previousDepositAmount = requiredDeposit(previousPlan.price);
+      pricing = {
+        price: Number(nextPlan.price), depositPercentage: EVENT_HALL_DEPOSIT_PERCENTAGE,
+        depositAmount, previousDepositAmount,
+        depositDifference: Math.round((depositAmount - previousDepositAmount) * 100) / 100,
+      };
+    }
+    const start = new Date(changes.startDatetime ?? booking.startDatetime);
+    const end = new Date(changes.endDatetime ?? booking.endDatetime);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+      throw new DomainError('La fecha es invalida o el fin no es posterior al inicio.', 422);
+    }
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + MAX_ADVANCE_BOOKING_DAYS);
+    if (start < new Date() || start > maxDate) {
+      throw new DomainError(`El inicio debe ser futuro y estar dentro de los proximos ${MAX_ADVANCE_BOOKING_DAYS} dias.`, 422);
+    }
+    if (await Booking.findOne({ where: {
+      resourceId: booking.resourceId,
+      ...buildBookingOverlapWhere({ start, end, excludeBookingId: booking.bookingId }),
+    }, transaction })) throw new DomainError('Ya existe una reserva en ese horario para este salon.', 409);
+    if (await ResourceBlock.findOne({ where: {
+      resourceId: booking.resourceId, ...buildBlockOverlapWhere({ start, end }),
+    }, transaction })) throw new DomainError('El salon esta bloqueado en ese horario.', 409);
+    // CA-4: no hay politica adicional definida para web; conservar origen y estado.
+    booking.startDatetime = start;
+    booking.endDatetime = end;
+    const fields = ['startDatetime', 'endDatetime'];
+    if (nextPlan) {
+      booking.eventHallPlanId = nextPlan.planId;
+      fields.push('eventHallPlanId');
+    }
+    await booking.save({ fields, transaction });
+    const result = await getHallBooking(booking.bookingId, { transaction });
+    // Importes requeridos, no pagos ni saldo financiero.
+    return { ...result, ...(pricing && { pricing }) };
+  });
+}
+
+// HU-015: cancelacion operativa, sin pagos, anulaciones ni devoluciones.
+async function cancelHallBooking(bookingId, { cancellationReason } = {}) {
+  return sequelize.transaction(async (transaction) => {
+    const booking = await Booking.findByPk(bookingId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!booking) throw new DomainError('La reserva del salon indicada no existe.', 404);
+    const resource = await Resource.findOne({
+      where: { resourceId: booking.resourceId, resourceType: EVENT_HALL_RESOURCE_TYPE }, transaction,
+    });
+    if (!resource) throw new DomainError('La reserva no pertenece a un salon de eventos.', 404);
+    if (booking.status === 'cancelled') throw new DomainError('La reserva ya se encuentra cancelada.', 409);
+    const fields = ['status'];
+    if (cancellationReason !== undefined) {
+      if (typeof cancellationReason !== 'string' || cancellationReason.trim().length > 250) {
+        throw new DomainError('El motivo debe tener como maximo 250 caracteres.', 422);
+      }
+      booking.cancellationReason = cancellationReason.trim();
+      fields.push('cancellationReason');
+    }
+    booking.status = 'cancelled';
+    await booking.save({ fields, transaction });
+    return {
+      bookingId: booking.bookingId, status: booking.status,
+      cancellationReason: booking.cancellationReason ?? null,
+    };
+  });
+}
+
 module.exports = {
+  cancelHallBooking,
+  listHallBookings,
+  getHallBooking,
+  updateHallBooking,
   EVENT_HALL_RESOURCE_TYPE,
   MAX_ADVANCE_BOOKING_DAYS,
   EVENT_HALL_DEPOSIT_PERCENTAGE,
