@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { checkHallAvailability, createHallBooking, listHallBookings, getHallBooking, updateHallBooking, cancelHallBooking } from '../services/reservasSalonService';
+import useEnterTransition from '../hooks/useEnterTransition';
 
 /**
  * Pagina del modulo de reservas del salon de eventos.
@@ -85,27 +86,6 @@ function toIsoDatetime(date, time) {
 
 const INITIAL_QUERY = { date: todayIsoDate(), startTime: '09:00', endTime: '13:00' };
 const INITIAL_BOOKING_FORM = { planId: EVENT_HALL_PLANS[0].planId, customerName: '', customerPhone: '' };
-
-/**
- * Anima la entrada de quien lo use: arranca "oculto" (opacity-0 y
- * levemente desplazado/achicado, segun las clases que le pongas) y, un
- * frame despues, pasa al estado final -- ahi es cuando `transition-all`
- * de Tailwind SI se nota. Un cambio de clase dentro del MISMO render no
- * anima (el navegador nunca llega a pintar el estado inicial); por eso
- * hace falta el paso extra con requestAnimationFrame.
- *
- * No es una libreria de animaciones -- es el truco minimo para lograr
- * una transicion de "aparecer" sin agregar una dependencia nueva al
- * proyecto (framer-motion, etc.) para un solo efecto puntual.
- */
-function useEnterTransition() {
-  const [entered, setEntered] = useState(false);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setEntered(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
-  return entered;
-}
 
 /**
  * Chip de plan seleccionable, de una sola linea (Concepto B, version

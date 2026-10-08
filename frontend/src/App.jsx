@@ -4,7 +4,6 @@ import {
   Receipt,
   CircleCheck,
   Banknote,
-  Clock,
   Lock,
   UserPlus,
   ScrollText,
@@ -15,6 +14,9 @@ import Dashboard from './pages/Dashboard.jsx';
 import SeleccionarEspacio from './pages/SeleccionarEspacio.jsx';
 import ReservasCancha from './pages/ReservasCancha.jsx';
 import ReservasSalon from './pages/ReservasSalon.jsx';
+import ReservasCabina from './pages/ReservasCabina.jsx';
+import ExtenderHospedaje from './pages/ExtenderHospedaje.jsx';
+import TarifasCabina from './pages/TarifasCabina.jsx';
 
 /**
  * Router principal de la aplicación.
@@ -23,7 +25,7 @@ import ReservasSalon from './pages/ReservasSalon.jsx';
  * elegido, Opción 3 · Por tareas). Cada una de las 9 tarjetas del
  * Dashboard navega a su propia ruta:
  *   - "Registrar reserva" → /reservar (selección de espacio) → el módulo
- *     real correspondiente (/cancha, /salon, /cabanas, /restaurante).
+ *     real correspondiente (/cancha, /salon, /cabinas, /restaurante).
  *   - Las otras 8 tareas → /tareas/<id>, con una pantalla de "pendiente
  *     de implementar" hasta que exista su HU.
  *
@@ -53,11 +55,12 @@ function App() {
               PantallaPendiente aparte por HU, la página ya cubre el
               flujo de disponibilidad + registro. */}
           <Route path="salon" element={<ReservasSalon />} />
-          {/* Sprint 3 — Kendall */}
-          <Route
-            path="cabanas"
-            element={<PantallaPendiente titulo="Cabañas" huRelacionadas="HU-016 a HU-022, HU-127" />}
-          />
+          {/* Sprint 3 — Marvin (HU-016, registro). HU-017 a HU-022 y HU-127
+              se suman a esta misma página: no hace falta un
+              PantallaPendiente aparte por HU. */}
+          <Route path="cabinas" element={<ReservasCabina />} />
+          {/* HU-128 (Marvin) — tarifa por noche de las cabinas (rol Administrador). */}
+          <Route path="cabinas/tarifas" element={<TarifasCabina />} />
           {/* Sprint 4 — Alison */}
           <Route
             path="restaurante"
@@ -116,10 +119,7 @@ function App() {
             path="tareas/sinpe"
             element={<PantallaPendiente icon={Banknote} titulo="Verificar SINPE" huRelacionadas="HU-077, HU-078" />}
           />
-          <Route
-            path="tareas/extender"
-            element={<PantallaPendiente icon={Clock} titulo="Extender hospedaje" huRelacionadas="HU-127" />}
-          />
+          <Route path="tareas/extender" element={<ExtenderHospedaje />} />
           <Route
             path="tareas/bloquear"
             element={<PantallaPendiente icon={Lock} titulo="Bloquear espacio" huRelacionadas="HU-079 a HU-101" />}

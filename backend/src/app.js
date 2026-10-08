@@ -38,6 +38,12 @@ app.use('/api/field-bookings', require('./modules/reservasCancha/reservasCancha.
 // HU-015).
 app.use('/api/hall-bookings', require('./modules/reservasSalon/reservasSalon.routes'));
 
+// Sprint 3 (Marvin) — reservas de cabinas (HU-016 a HU-022, HU-127).
+app.use('/api/cabin-bookings', require('./modules/reservasCabina/reservasCabina.routes'));
+
+// Sprint 3 (Marvin) — cabinas como recurso: tarifa por noche (HU-128).
+app.use('/api/cabins', require('./modules/reservasCabina/cabinRate.routes'));
+
 // TODO (Alison/Wagner, Sprint 2): montar aqui el CRUD de planes de
 // precio del salon (HU-008 a HU-012), ej.
 // app.use('/api/event-hall-plans', require('./modules/reservasSalon/eventHallPlans.routes'));

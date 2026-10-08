@@ -113,7 +113,7 @@ const STATUS_STYLES = {
  * para el salon de eventos): por defecto usa la foto de la cancha
  * (FIELD_BACKDROP_STYLE), para que ReservasCancha.jsx siga funcionando
  * exactamente igual sin tener que tocarlo. Cualquier otro modulo que
- * reutilice esta grilla (salon, cabanas, mesas) pasa su propio fondo
+ * reutilice esta grilla (salon, cabinas, mesas) pasa su propio fondo
  * en vez de copiar el componente completo -- mismo principio de
  * responsabilidad unica que ya explicaba el comentario de arriba,
  * ahora tambien abierto a extension (OCP) sin modificar lo que ya
