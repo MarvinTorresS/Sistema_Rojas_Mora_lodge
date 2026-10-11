@@ -155,3 +155,57 @@ export async function updateCabinRate(resourceId, pricePerNight) {
     throw toFriendlyError(error, 'No se pudo actualizar la tarifa. Intentá de nuevo.');
   }
 }
+
+// Cuando el servidor no responde (apagado, sin conexión a la base de datos o
+// sin red) axios no trae `error.response`: se avisa eso en vez de un error
+// genérico (HU-018 y HU-019).
+const CONNECTION_ERROR_MESSAGE =
+  'No se pudo conectar con el servidor. Verificá que el sistema esté encendido e intentá de nuevo.';
+
+/**
+ * HU-018 — Busca reservas de cabina por huésped (nombre o identificación,
+ * coincidencia parcial y sin distinguir mayúsculas). Se ejecuta al presionar
+ * Buscar o Enter; no se consulta mientras se escribe.
+ *
+ * Sin coincidencias NO es un error: llega una lista vacía y el texto del
+ * criterio de aceptación en `meta.message`. Cada ítem trae lo necesario para
+ * precargar la modificación de HU-019 (teléfono, correo, acompañantes).
+ *
+ * @param {{ q: string, page?: number, pageSize?: number }} params
+ * @returns {Promise<{ data: object[], meta: { page: number, pageSize: number,
+ *           total: number, totalPages: number, query: string, message: string|null } }>}
+ */
+export async function searchCabinBookings(params) {
+  try {
+    const response = await api.get(`${BASE_PATH}/search`, { params });
+    return response.data;
+  } catch (error) {
+    throw toFriendlyError(error, error.response ? 'No se pudo realizar la búsqueda. Intentá de nuevo.' : CONNECTION_ERROR_MESSAGE);
+  }
+}
+
+/**
+ * HU-019 — Modifica una reserva de cabina: fechas, cabina, acompañantes o
+ * datos del huésped. Se manda SOLO lo que cambia.
+ *
+ * Errores que la pantalla distingue por `error.code`:
+ *  - CABIN_NOT_AVAILABLE (409): la cabina o las fechas están ocupadas; en
+ *    `error.details` vienen `alternatives` (cabinas) y `alternativeDates`.
+ *  - CABIN_CHANGE_BLOCKED / CHECK_IN_DATE_LOCKED (422): ya hizo check-in.
+ *  - BOOKING_NOT_MODIFIABLE (422): la reserva ya no está activa.
+ *
+ * @param {number} bookingId
+ * @param {{ resourceId?: number, checkInDate?: string, checkOutDate?: string,
+ *           companions?: number, guestName?: string, guestPhone?: string,
+ *           guestEmail?: string }} changes  fechas AAAA-MM-DD
+ * @returns {Promise<{ changed: boolean, changes: object, booking: object,
+ *           cabin: object, guest: object, stay: object, amounts: object }>}
+ */
+export async function updateCabinBooking(bookingId, changes) {
+  try {
+    const response = await api.patch(`${BASE_PATH}/${bookingId}`, changes);
+    return response.data.data;
+  } catch (error) {
+    throw toFriendlyError(error, error.response ? 'No se pudo modificar la reserva. Intentá de nuevo.' : CONNECTION_ERROR_MESSAGE);
+  }
+}

@@ -22,6 +22,9 @@ const { AuditLog } = require('../../models');
 const CABIN_AUDIT_ACTIONS = {
   BOOKING_CREATED: 'cabin_booking_created',
   STAY_EXTENDED: 'cabin_stay_extended',
+  // HU-019: modificacion de fechas, cabina o datos del huesped.
+  // Su detalle siempre trae `totalAmount`, igual que las otras dos.
+  BOOKING_UPDATED: 'cabin_booking_updated',
 };
 
 // Accion de auditoria del cambio de TARIFA (HU-128). Va aparte de
@@ -91,7 +94,37 @@ async function getRecordedStayTotal({ bookingId, fallbackTotal, transaction }) {
   return { totalAmount: fallbackTotal, isEstimated: true };
 }
 
+// Igual que getRecordedStayTotal pero para varias reservas en UNA consulta
+// (lo usa la busqueda, que lista hasta una pagina entera). `fallbacks` es un
+// Map bookingId -> total de respaldo. Devuelve un Map bookingId ->
+// { totalAmount, isEstimated }.
+async function getRecordedStayTotals({ fallbacks }) {
+  const ids = [...fallbacks.keys()];
+  const totals = new Map();
+  if (ids.length > 0) {
+    const entries = await AuditLog.findAll({
+      where: { entityType: 'booking', entityId: ids, action: AMOUNT_ACTIONS },
+      order: [['auditId', 'DESC']],
+    });
+    // Van de la mas nueva a la mas vieja: la primera de cada reserva es la vigente.
+    entries.forEach((entry) => {
+      if (totals.has(entry.entityId)) return;
+      try {
+        const totalAmount = Number(JSON.parse(entry.details).totalAmount);
+        if (Number.isFinite(totalAmount)) totals.set(entry.entityId, { totalAmount, isEstimated: false });
+      } catch (error) {
+        // JSON danado: queda el calculo de respaldo.
+      }
+    });
+  }
+  ids.forEach((id) => {
+    if (!totals.has(id)) totals.set(id, { totalAmount: fallbacks.get(id), isEstimated: true });
+  });
+  return totals;
+}
+
 module.exports = {
+  getRecordedStayTotals,
   CABIN_AUDIT_ACTIONS,
   CABIN_RATE_AUDIT_ACTION,
   recordCabinAudit,

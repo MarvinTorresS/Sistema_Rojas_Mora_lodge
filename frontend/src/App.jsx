@@ -17,6 +17,8 @@ import ReservasSalon from './pages/ReservasSalon.jsx';
 import ReservasCabina from './pages/ReservasCabina.jsx';
 import ExtenderHospedaje from './pages/ExtenderHospedaje.jsx';
 import TarifasCabina from './pages/TarifasCabina.jsx';
+import PlanesSalon from './pages/PlanesSalon.jsx';
+import BuscarReservaCabina from './pages/BuscarReservaCabina.jsx';
 
 /**
  * Router principal de la aplicación.
@@ -55,12 +57,16 @@ function App() {
               PantallaPendiente aparte por HU, la página ya cubre el
               flujo de disponibilidad + registro. */}
           <Route path="salon" element={<ReservasSalon />} />
+          {/* HU-008/HU-009 — catálogo de planes de precio del salón. */}
+          <Route path="salon/planes" element={<PlanesSalon />} />
           {/* Sprint 3 — Marvin (HU-016, registro). HU-017 a HU-022 y HU-127
               se suman a esta misma página: no hace falta un
               PantallaPendiente aparte por HU. */}
           <Route path="cabinas" element={<ReservasCabina />} />
           {/* HU-128 (Marvin) — tarifa por noche de las cabinas (rol Administrador). */}
           <Route path="cabinas/tarifas" element={<TarifasCabina />} />
+          {/* HU-018/HU-019 — buscar una reserva de cabina por huésped y modificarla. */}
+          <Route path="cabinas/buscar" element={<BuscarReservaCabina />} />
           {/* Sprint 4 — Alison */}
           <Route
             path="restaurante"

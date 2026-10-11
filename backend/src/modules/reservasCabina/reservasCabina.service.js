@@ -9,6 +9,7 @@ const {
   Booking, Resource, ResourceBlock, CabinDetail, Customer, sequelize,
 } = require('../../models');
 const { DomainError } = require('../../utils/domainError.util');
+const { GUEST_MESSAGES } = require('../../utils/guestData.util');
 const { buildBookingOverlapWhere, buildBlockOverlapWhere } = require('../../utils/bookingOverlap.util');
 const {
   CHECK_IN_TIME, CHECK_OUT_TIME, toHotelDatetime, toHotelDate, todayInHotelTimeZone,
@@ -208,8 +209,14 @@ async function getCabinAvailability({
 async function resolveGuest({
   guestName, guestIdentification, guestPhone, guestEmail, linkExistingGuest, transaction,
 }) {
+  // La cedula llega solo con numeros; los huespedes registrados antes de
+  // validar el formato pueden estar guardados con guiones (6-0495-0088).
+  const idCandidates = [guestIdentification];
+  if (/^\d{9}$/.test(guestIdentification)) {
+    idCandidates.push(`${guestIdentification[0]}-${guestIdentification.slice(1, 5)}-${guestIdentification.slice(5)}`);
+  }
   const existing = await Customer.findOne({
-    where: { identificationNumber: guestIdentification },
+    where: { identificationNumber: { [Op.in]: idCandidates } },
     transaction,
   });
 
@@ -232,7 +239,9 @@ async function resolveGuest({
 
   const emailOwner = await Customer.findOne({ where: { email: guestEmail }, transaction });
   if (emailOwner) {
-    throw new DomainError('El correo indicado ya esta asociado a otro huesped.', 409);
+    // El correo pertenece a UNA cedula: dos personas pueden llamarse igual,
+    // pero no compartir cedula ni correo.
+    throw new DomainError(GUEST_MESSAGES.EMAIL_OF_OTHER_ID, 409, { code: 'EMAIL_IN_USE' });
   }
 
   return Customer.create({
@@ -389,4 +398,7 @@ module.exports = {
   countNights,
   getCabinAvailability,
   createCabinBooking,
+  // Lo reutiliza HU-019 (cabinBookingUpdate.service.js) para sugerir
+  // cabinas alternativas al modificar una reserva.
+  findAlternativeCabins,
 };

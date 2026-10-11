@@ -16,6 +16,12 @@ const {
   extendCabinStayRules, quoteCabinExtensionRules, listExtendableRules,
 } = require('./cabinExtension.validator');
 
+// HU-018 y HU-019: buscar por huesped y modificar una reserva.
+const searchController = require('./cabinSearch.controller');
+const { searchCabinBookingsRules } = require('./cabinSearch.validator');
+const updateController = require('./cabinBookingUpdate.controller');
+const { updateCabinBookingRules } = require('./cabinBookingUpdate.validator');
+
 const router = express.Router();
 
 // HU-016 (Marvin) — Disponibilidad de todas las cabinas para unas
@@ -36,11 +42,15 @@ router.post('/', createCabinBookingRules, controller.createBooking);
 // HU-017 (Kendall) — Consultar el listado de reservas de cabinas.
 // TODO (Kendall, Sprint 3): GET /
 
-// HU-018 (Alison) — Buscar una reserva de cabina por huesped.
-// TODO (Alison, Sprint 3): GET /search
+// HU-018 — Buscar una reserva de cabina por huesped (nombre o
+// identificacion, coincidencia parcial). Query: ?q=&page=&pageSize=
+// Va ANTES de las rutas con :bookingId, por la misma razon que /availability.
+router.get('/search', searchCabinBookingsRules, searchController.searchBookings);
 
-// HU-019 (Alison) — Modificar una reserva de cabina existente.
-// TODO (Alison, Sprint 3): PATCH /:bookingId
+// HU-019 — Modificar una reserva de cabina existente (fechas,
+// cabina o datos del huesped). Body: cualquiera de resourceId, checkInDate,
+// checkOutDate, companions, guestName, guestPhone, guestEmail.
+router.patch('/:bookingId', updateCabinBookingRules, updateController.updateBooking);
 
 // HU-020 (Kendall) — Cancelar una reserva de cabina existente.
 // TODO (Kendall, Sprint 3): POST /:bookingId/cancel

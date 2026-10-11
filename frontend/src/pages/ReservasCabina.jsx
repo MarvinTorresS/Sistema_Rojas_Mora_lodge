@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, RotateCw, Tag, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, RotateCw, Search, Tag, TriangleAlert } from 'lucide-react';
 import { createCabinBooking, getCabinAvailability } from '../services/reservasCabinaService';
 import StayBar from '../components/cabinas/StayBar.jsx';
 import CabinCard from '../components/cabinas/CabinCard.jsx';
@@ -8,6 +8,9 @@ import UnavailableCabinBanner from '../components/cabinas/UnavailableCabinBanner
 import ReservationBar from '../components/cabinas/ReservationBar.jsx';
 import GuestDrawer from '../components/cabinas/GuestDrawer.jsx';
 import BookingConfirmationModal from '../components/cabinas/BookingConfirmationModal.jsx';
+import {
+  normalizeIdentification, normalizePhone, typeIdentification, typePhone, validateGuestData,
+} from '../components/common/guestData';
 import { resolveLook, statusLabel } from '../components/cabinas/cabinLooks';
 import {
   addDays, countNights, formatColones, formatDayMonth, formatDayRange, pluralize, stayNightDates, todayInHotel,
@@ -45,7 +48,20 @@ const MAX_PARTY_SIZE = 20;
 const DEFAULT_POLICY = { checkInTime: '15:00', checkOutTime: '11:00' };
 const EMPTY_GUEST = { guestIdentification: '', guestName: '', guestPhone: '', guestEmail: '' };
 const IDLE_SUBMIT = { status: 'idle', message: '', fieldErrors: {} };
-const ERROR_CODES = { GUEST_ALREADY_EXISTS: 'GUEST_ALREADY_EXISTS', CABIN_NOT_AVAILABLE: 'CABIN_NOT_AVAILABLE' };
+const ERROR_CODES = {
+  GUEST_ALREADY_EXISTS: 'GUEST_ALREADY_EXISTS', CABIN_NOT_AVAILABLE: 'CABIN_NOT_AVAILABLE', EMAIL_IN_USE: 'EMAIL_IN_USE',
+};
+
+// Campos del huésped que siguen vacíos (cada uno con su aviso de "obligatorio").
+function missingGuestFields(guest) {
+  const labels = {
+    guestIdentification: 'La identificación del huésped es obligatoria.',
+    guestName: 'El nombre completo del huésped es obligatorio.',
+    guestPhone: 'El teléfono del huésped es obligatorio.',
+    guestEmail: 'El correo del huésped es obligatorio.',
+  };
+  return Object.fromEntries(Object.entries(labels).filter(([field]) => !String(guest[field] ?? '').trim()));
+}
 
 function initialStay() {
   const today = todayInHotel();
@@ -168,10 +184,12 @@ function ReservasCabina() {
     // vínculo: ese perfil ya no corresponde a lo que se escribió.
     if (field === 'guestIdentification' && existingGuest) {
       setExistingGuest(null);
-      setGuest({ ...EMPTY_GUEST, guestIdentification: value });
+      setGuest({ ...EMPTY_GUEST, guestIdentification: typeIdentification(value) });
       return;
     }
-    setGuest((previous) => ({ ...previous, [field]: value }));
+    // En cédula y teléfono no se dejan escribir letras ni símbolos.
+    const typed = field === 'guestIdentification' ? typeIdentification(value) : field === 'guestPhone' ? typePhone(value) : value;
+    setGuest((previous) => ({ ...previous, [field]: typed }));
     setSubmitState((previous) => ({ ...previous, fieldErrors: { ...previous.fieldErrors, [field]: undefined } }));
   }
   function handleUnlinkGuest() {
@@ -182,13 +200,20 @@ function ReservasCabina() {
   async function handleSubmitGuest(event) {
     event.preventDefault();
     if (!selectedCabin) return;
+    // Se revisa el formato antes de ir al servidor: cédula con números y la
+    // cantidad debida, teléfono de 8 dígitos y correo válido.
+    const found = { ...missingGuestFields(guest), ...validateGuestData(guest) };
+    if (Object.keys(found).length > 0) {
+      setSubmitState({ status: 'error', message: 'Revisá los datos marcados en rojo.', fieldErrors: found });
+      return;
+    }
     setSubmitState({ status: 'loading', message: '', fieldErrors: {} });
     try {
       const result = await createCabinBooking({
         resourceId: selectedCabin.resourceId,
-        guestIdentification: guest.guestIdentification.trim(),
+        guestIdentification: normalizeIdentification(guest.guestIdentification) ?? guest.guestIdentification.trim(),
         guestName: guest.guestName.trim(),
-        guestPhone: guest.guestPhone.trim(),
+        guestPhone: normalizePhone(guest.guestPhone) ?? guest.guestPhone.trim(),
         guestEmail: guest.guestEmail.trim(),
         checkInDate: stay.checkInDate,
         checkOutDate: stay.checkOutDate,
@@ -231,6 +256,11 @@ function ReservasCabina() {
         setRefreshKey((key) => key + 1);
         return;
       }
+      if (error.code === ERROR_CODES.EMAIL_IN_USE) {
+        // El correo ya es de otra cédula: se marca en el campo del correo.
+        setSubmitState({ status: 'error', message: 'Revisá los datos marcados en rojo.', fieldErrors: { guestEmail: error.message } });
+        return;
+      }
       setSubmitState({ status: 'error', message: error.message, fieldErrors: error.fieldErrors ?? {} });
     }
   }
@@ -260,15 +290,26 @@ function ReservasCabina() {
           <h2 className="mt-3 font-display text-2xl font-semibold text-primary-900">Reserva de cabina</h2>
           <p className="text-sm text-muted">Registrá la estadía con los datos del huésped.</p>
         </div>
-        {/* HU-128: la tarifa se administra en su propia pantalla. TODO
-            (Sprint 5, roles): mostrar este acceso solo al Administrador. */}
-        <Link
-          to="/cabinas/tarifas"
-          className="inline-flex min-h-[44px] items-center gap-2 rounded-[10px] border border-line bg-white px-4 text-sm font-semibold text-primary-800 shadow-card transition-colors hover:border-primary-400 hover:bg-primary-50"
-        >
-          <Tag size={16} aria-hidden="true" />
-          Tarifas
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* HU-018/HU-019: buscar una reserva por huésped y
+              modificarla, en su propia pantalla. */}
+          <Link
+            to="/cabinas/buscar"
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-[10px] border border-line bg-white px-4 text-sm font-semibold text-primary-800 shadow-card transition-colors hover:border-primary-400 hover:bg-primary-50"
+          >
+            <Search size={16} aria-hidden="true" />
+            Buscar reserva
+          </Link>
+          {/* HU-128: la tarifa se administra en su propia pantalla. TODO
+              (Sprint 5, roles): mostrar este acceso solo al Administrador. */}
+          <Link
+            to="/cabinas/tarifas"
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-[10px] border border-line bg-white px-4 text-sm font-semibold text-primary-800 shadow-card transition-colors hover:border-primary-400 hover:bg-primary-50"
+          >
+            <Tag size={16} aria-hidden="true" />
+            Tarifas
+          </Link>
+        </div>
       </div>
 
       <StayBar

@@ -30,6 +30,24 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       field: 'price',
     },
+    // HU-008/HU-009 (Sprint 2). Columnas agregadas por la
+    // migracion 20261008000001. Ambas son opcionales (NULL en los planes
+    // anteriores): included_services guarda un arreglo JSON en texto y
+    // deposit_percentage el porcentaje de anticipo propio del plan (0-100).
+    includedServices: {
+      type: DataTypes.TEXT,
+      field: 'included_services',
+    },
+    depositPercentage: {
+      type: DataTypes.DECIMAL(5, 2),
+      field: 'deposit_percentage',
+    },
+    // Costo de CADA hora extra de este plan (migracion 20261010000001).
+    // NULL = el plan no admite horas extra.
+    extraHourPrice: {
+      type: DataTypes.DECIMAL(10, 2),
+      field: 'extra_hour_price',
+    },
   }, {
     tableName: 'event_hall_pricing_plans',
     timestamps: false,

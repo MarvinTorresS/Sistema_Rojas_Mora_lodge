@@ -7,7 +7,10 @@ const INPUT_CLASS = 'w-full rounded-[9px] border px-3 py-2.5 text-[13.5px] outli
 // `grow` solo se usa para campos que comparten FILA (Teléfono/Correo):
 // flex-1 reparte el eje principal del contenedor, así que dentro de una
 // COLUMNA haría crecer el campo en alto en vez de en ancho.
-function Field({ id, label, value, onChange, error, locked = false, grow = false, icon: Icon, type = 'text', autoFocus = false, autoComplete }) {
+function Field({
+  id, label, value, onChange, error, locked = false, grow = false, icon: Icon, type = 'text', autoFocus = false, autoComplete,
+  inputMode, placeholder, maxLength,
+}) {
   return (
     <div className={`flex min-w-0 flex-col gap-1.5 ${grow ? 'flex-1' : ''}`}>
       <label htmlFor={id} className="text-xs font-semibold text-muted">{label}</label>
@@ -15,6 +18,7 @@ function Field({ id, label, value, onChange, error, locked = false, grow = false
         {Icon && <Icon size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />}
         <input
           id={id} type={type} value={value} readOnly={locked} autoFocus={autoFocus} autoComplete={autoComplete}
+          inputMode={inputMode} placeholder={placeholder} maxLength={maxLength}
           aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined}
           onChange={(event) => onChange(event.target.value)}
           className={`${INPUT_CLASS} ${Icon ? 'pl-9' : ''} ${
@@ -75,6 +79,7 @@ function GuestDrawer({
 
         <Field
           id="guest-identification" label="Identificación" icon={IdCard} autoFocus
+          inputMode="numeric" placeholder="Solo números, ej. 6-0495-0088" maxLength={14}
           value={values.guestIdentification} error={fieldErrors.guestIdentification}
           onChange={(value) => onFieldChange('guestIdentification', value)}
         />
@@ -98,12 +103,14 @@ function GuestDrawer({
 
         <Field
           id="guest-name" label="Nombre completo" locked={locked} autoComplete="name"
+          placeholder="Nombre y apellidos" maxLength={150}
           value={values.guestName} error={fieldErrors.guestName}
           onChange={(value) => onFieldChange('guestName', value)}
         />
         <div className="flex gap-2.5">
           <Field
             id="guest-phone" label="Teléfono" type="tel" grow locked={locked} autoComplete="tel"
+            inputMode="tel" placeholder="8 dígitos" maxLength={20}
             value={values.guestPhone} error={fieldErrors.guestPhone}
             onChange={(value) => onFieldChange('guestPhone', value)}
           />

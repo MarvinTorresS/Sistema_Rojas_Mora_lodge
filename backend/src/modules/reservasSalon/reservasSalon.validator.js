@@ -13,6 +13,7 @@
 // Igual que en reservasCancha.validator.js: esto solo valida FORMA,
 // nunca reglas de negocio (eso es del service).
 const { body, param, query, validationResult } = require('express-validator');
+const { GUEST_MESSAGES, normalizePhone, isValidName } = require('../../utils/guestData.util');
 
 // NOTA (duplicado intencional, no un descuido): esta misma funcion ya
 // existe en reservasCancha.validator.js. Es identica y 100% generica
@@ -70,12 +71,15 @@ const createHallBookingRules = [
   body('customerName')
     .exists({ checkFalsy: true }).withMessage('El nombre del cliente es obligatorio.')
     .isString().trim().isLength({ min: 3, max: 150 })
-    .withMessage('El nombre del cliente debe tener entre 3 y 150 caracteres.'),
+    .withMessage('El nombre del cliente debe tener entre 3 y 150 caracteres.').bail()
+    .custom(isValidName).withMessage(GUEST_MESSAGES.NAME),
 
+  // 8 digitos (se acepta +506, espacios y guiones); se guarda solo con los 8.
   body('customerPhone')
-    .exists({ checkFalsy: true }).withMessage('El telefono del cliente es obligatorio.')
-    .isString().trim().isLength({ min: 8, max: 20 })
-    .withMessage('El telefono del cliente no es valido.'),
+    .exists({ checkFalsy: true }).withMessage('El telefono del cliente es obligatorio.').bail()
+    .isString().withMessage(GUEST_MESSAGES.PHONE).bail()
+    .custom((value) => normalizePhone(value) !== null).withMessage(GUEST_MESSAGES.PHONE)
+    .customSanitizer((value) => normalizePhone(value) ?? value),
 
   body('startDatetime')
     .exists({ checkFalsy: true }).withMessage('La fecha y hora de inicio son obligatorias.')
@@ -84,6 +88,12 @@ const createHallBookingRules = [
   body('endDatetime')
     .exists({ checkFalsy: true }).withMessage('La fecha y hora de fin son obligatorias.')
     .isISO8601().withMessage('endDatetime debe ser una fecha valida (formato ISO 8601).'),
+
+  // Horas extra (opcional; sin enviar = 0). Que cuadren con el horario y el
+  // plan lo decide el service.
+  body('extraHours')
+    .optional({ nullable: true })
+    .isInt({ min: 0, max: 24 }).withMessage('Las horas extra deben ser un número entero entre 0 y 24.'),
 
   handleValidationErrors,
 ];
@@ -102,9 +112,10 @@ const listHallBookingsRules = [
 const updateHallBookingRules = [
   param('bookingId').isInt({ min: 1 }).withMessage('bookingId debe ser un entero positivo.'),
   body().custom((value) => value && typeof value === 'object' && !Array.isArray(value) &&
-    Object.keys(value).length > 0 && Object.keys(value).every((key) => ['planId', 'startDatetime', 'endDatetime'].includes(key)))
-    .withMessage('Indique plan, inicio o fin. Solo se permiten planId, startDatetime y endDatetime.'),
+    Object.keys(value).length > 0 && Object.keys(value).every((key) => ['planId', 'startDatetime', 'endDatetime', 'extraHours'].includes(key)))
+    .withMessage('Indique plan, inicio, fin u horas extra. Solo se permiten planId, startDatetime, endDatetime y extraHours.'),
   body('planId').optional().isInt({ min: 1 }).withMessage('planId debe ser un entero positivo.'),
+  body('extraHours').optional().isInt({ min: 0, max: 24 }).withMessage('Las horas extra deben ser un número entero entre 0 y 24.'),
   ...['startDatetime', 'endDatetime'].map((field) => body(field).optional()
     .isString().bail().isISO8601({ strict: true, strictSeparator: true }).bail()
     .custom((value) => /T\d{2}:\d{2}/.test(value) && Number.isFinite(new Date(value).getTime()))

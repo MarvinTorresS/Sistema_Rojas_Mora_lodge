@@ -44,9 +44,10 @@ app.use('/api/cabin-bookings', require('./modules/reservasCabina/reservasCabina.
 // Sprint 3 (Marvin) — cabinas como recurso: tarifa por noche (HU-128).
 app.use('/api/cabins', require('./modules/reservasCabina/cabinRate.routes'));
 
-// TODO (Alison/Wagner, Sprint 2): montar aqui el CRUD de planes de
-// precio del salon (HU-008 a HU-012), ej.
-// app.use('/api/event-hall-plans', require('./modules/reservasSalon/eventHallPlans.routes'));
+// Sprint 2 (Alison/Wagner) — planes de precio del salon (HU-008 a HU-012).
+// Alison: registrar y listar (HU-008, HU-009). Wagner agrega modificar y
+// eliminar (HU-010 a HU-012) en el mismo router.
+app.use('/api/event-hall-plans', require('./modules/reservasSalon/eventHallPlans.routes'));
 
 // --- Manejo de rutas y errores (siempre al final) ---
 app.use(notFoundHandler);

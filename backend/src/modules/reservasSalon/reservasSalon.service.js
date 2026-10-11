@@ -10,6 +10,9 @@ const {
 } = require('../../models');
 const { DomainError } = require('../../utils/domainError.util');
 const { buildBookingOverlapWhere, buildBlockOverlapWhere } = require('../../utils/bookingOverlap.util');
+const {
+  assertExtraHours, parseExtraHours, extraHoursCost, totalPrice,
+} = require('./reservasSalon.extraHours.util');
 
 // Tipo de recurso que atiende este modulo (ver resource.model.js).
 const EVENT_HALL_RESOURCE_TYPE = 'event_hall';
@@ -122,7 +125,7 @@ async function findOrCreateCustomer({ customerName, customerPhone }) {
 // seleccionado.
 async function createHallBooking(payload) {
   const {
-    resourceId, planId, customerName, customerPhone, startDatetime, endDatetime,
+    resourceId, planId, customerName, customerPhone, startDatetime, endDatetime, extraHours,
   } = payload;
 
   const start = new Date(startDatetime);
@@ -152,6 +155,10 @@ async function createHallBooking(payload) {
   if (!plan) {
     throw new DomainError('El plan de precios indicado no existe para este salon.', 404);
   }
+
+  // Horas extra: si el horario dura mas que el plan, las horas que sobran
+  // deben venir declaradas (y el plan debe admitirlas).
+  const extra = assertExtraHours({ plan, start, end, extraHours });
 
   // CA-4 (limite de anticipacion): misma politica que la consulta de
   // disponibilidad (HU-007), asi que un horario que HU-007 reporto
@@ -191,17 +198,23 @@ async function createHallBooking(payload) {
     eventHallPlanId: plan.planId,
     startDatetime: start,
     endDatetime: end,
+    extraHours: extra,
     status: 'active',
   });
 
   // CA-3: calculo automatico del anticipo. Se redondea a 2 decimales
   // (moneda) para no arrastrar errores de punto flotante hacia la
   // factura/pago (HU-073, Sprint 7).
-  const depositAmount = requiredDeposit(plan.price);
+  // El anticipo se calcula sobre el total: plan + horas extra.
+  const total = totalPrice(plan, extra);
+  const depositAmount = requiredDeposit(total);
 
   return {
     booking,
-    plan: { planId: plan.planId, planName: plan.planName, hours: plan.hours, price: Number(plan.price) },
+    plan: mapPlan(plan),
+    extraHours: extra,
+    extraHoursCost: extraHoursCost(plan, extra),
+    totalPrice: total,
     depositAmount,
     depositPercentage: EVENT_HALL_DEPOSIT_PERCENTAGE,
   };
@@ -213,7 +226,10 @@ function requiredDeposit(price) {
 }
 
 function mapPlan(plan) {
-  return { planId: plan.planId, planName: plan.planName, hours: plan.hours, price: Number(plan.price) };
+  return {
+    planId: plan.planId, planName: plan.planName, hours: plan.hours, price: Number(plan.price),
+    extraHourPrice: plan.extraHourPrice === null || plan.extraHourPrice === undefined ? null : Number(plan.extraHourPrice),
+  };
 }
 
 // HU-014: DTO explicito; nunca exponer credenciales del cliente.
@@ -225,6 +241,9 @@ function mapHallBooking(booking) {
     resource: row.resource ? { resourceId: row.resource.resourceId, name: row.resource.name } : null,
     customer: row.customer ? { customerId: row.customer.customerId, fullName: row.customer.fullName, phone: row.customer.phone } : null,
     plan: row.eventHallPlan ? mapPlan(row.eventHallPlan) : null,
+    // Horas extra contratadas y lo que cuestan (0 si no hay).
+    extraHours: Number(row.extraHours) || 0,
+    extraHoursCost: row.eventHallPlan ? extraHoursCost(row.eventHallPlan, Number(row.extraHours) || 0) : 0,
   };
 }
 
@@ -232,7 +251,7 @@ function hallBookingIncludes() {
   return [
     { model: Resource, as: 'resource', required: true, where: { resourceType: EVENT_HALL_RESOURCE_TYPE } },
     { model: Customer, as: 'customer', attributes: ['customerId', 'fullName', 'phone'] },
-    { model: EventHallPricingPlan, as: 'eventHallPlan', attributes: ['planId', 'planName', 'hours', 'price'] },
+    { model: EventHallPricingPlan, as: 'eventHallPlan', attributes: ['planId', 'planName', 'hours', 'price', 'extraHourPrice'] },
   ];
 }
 
@@ -268,24 +287,33 @@ async function updateHallBooking(bookingId, changes = {}) {
     if (!resource) throw new DomainError('La reserva no pertenece a un salon de eventos.', 404);
     if (booking.status === 'cancelled') throw new DomainError('Una reserva cancelada no puede modificarse.', 409);
     if (resource.status !== 'available') throw new DomainError('El salon no esta disponible actualmente.', 409);
-    let pricing;
+    // Planes del salon (con bloqueo) para validar la cobertura de horas y
+    // calcular importes. Booking no conserva el precio historico: se usan los
+    // precios vigentes.
+    const plans = await EventHallPricingPlan.findAll({
+      where: { resourceId: booking.resourceId }, order: [['planId', 'ASC']],
+      transaction, lock: transaction.LOCK.UPDATE,
+    });
+    const previousPlan = plans.find((plan) => plan.planId === booking.eventHallPlanId);
     let nextPlan;
     if (changes.planId !== undefined) {
-      // Comparar precios vigentes: Booking no conserva el precio historico.
-      const plans = await EventHallPricingPlan.findAll({
-        where: { resourceId: booking.resourceId }, order: [['planId', 'ASC']],
-        transaction, lock: transaction.LOCK.UPDATE,
-      });
       nextPlan = plans.find((plan) => plan.planId === Number(changes.planId));
       if (!nextPlan) throw new DomainError('El plan indicado no existe para este salon.', 404);
-      const previousPlan = plans.find((plan) => plan.planId === booking.eventHallPlanId);
-      if (!previousPlan) throw new DomainError('No se puede calcular el anticipo anterior: la reserva no tiene un plan valido.', 409);
-      const depositAmount = requiredDeposit(nextPlan.price);
-      const previousDepositAmount = requiredDeposit(previousPlan.price);
+    }
+    const currentExtra = parseExtraHours(booking.extraHours);
+    const nextExtra = changes.extraHours !== undefined ? parseExtraHours(changes.extraHours) : currentExtra;
+    let pricing;
+    if (changes.planId !== undefined || changes.extraHours !== undefined) {
+      const pricingPlan = nextPlan ?? previousPlan;
+      if (!previousPlan || !pricingPlan) throw new DomainError('No se puede calcular el anticipo anterior: la reserva no tiene un plan valido.', 409);
+      const nextTotal = totalPrice(pricingPlan, nextExtra);
+      const depositAmount = requiredDeposit(nextTotal);
+      const previousDepositAmount = requiredDeposit(totalPrice(previousPlan, currentExtra));
       pricing = {
-        price: Number(nextPlan.price), depositPercentage: EVENT_HALL_DEPOSIT_PERCENTAGE,
+        price: nextTotal, depositPercentage: EVENT_HALL_DEPOSIT_PERCENTAGE,
         depositAmount, previousDepositAmount,
         depositDifference: Math.round((depositAmount - previousDepositAmount) * 100) / 100,
+        ...(nextExtra > 0 && { extraHours: nextExtra, extraHoursCost: extraHoursCost(pricingPlan, nextExtra) }),
       };
     }
     const start = new Date(changes.startDatetime ?? booking.startDatetime);
@@ -305,6 +333,10 @@ async function updateHallBooking(bookingId, changes = {}) {
     if (await ResourceBlock.findOne({ where: {
       resourceId: booking.resourceId, ...buildBlockOverlapWhere({ start, end }),
     }, transaction })) throw new DomainError('El salon esta bloqueado en ese horario.', 409);
+    // Horas extra: el horario nuevo debe quedar cubierto por el plan (el nuevo
+    // si lo cambian, o el actual) mas las horas extra.
+    const coveringPlan = nextPlan ?? previousPlan;
+    if (coveringPlan) assertExtraHours({ plan: coveringPlan, start, end, extraHours: nextExtra });
     // CA-4: no hay politica adicional definida para web; conservar origen y estado.
     booking.startDatetime = start;
     booking.endDatetime = end;
@@ -312,6 +344,10 @@ async function updateHallBooking(bookingId, changes = {}) {
     if (nextPlan) {
       booking.eventHallPlanId = nextPlan.planId;
       fields.push('eventHallPlanId');
+    }
+    if (changes.extraHours !== undefined) {
+      booking.extraHours = nextExtra;
+      fields.push('extraHours');
     }
     await booking.save({ fields, transaction });
     const result = await getHallBooking(booking.bookingId, { transaction });

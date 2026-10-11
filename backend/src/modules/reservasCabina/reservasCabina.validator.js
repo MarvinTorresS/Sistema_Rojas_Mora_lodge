@@ -5,6 +5,9 @@
 // dato venga y tenga el formato correcto; las reglas de NEGOCIO
 // (disponibilidad, capacidad, huesped duplicado) son del service.
 const { body, query, validationResult } = require('express-validator');
+const {
+  GUEST_MESSAGES, normalizeIdentification, normalizePhone, isValidEmail, isValidName, isFullName,
+} = require('../../utils/guestData.util');
 
 // Fabrica de manejadores de errores de validacion. Todos responden 422 con
 // el mismo formato ({ error: { message, details: [{ field, message }] } });
@@ -71,23 +74,29 @@ const createCabinBookingRules = [
   body('guestName')
     .exists({ checkFalsy: true }).withMessage('El nombre completo del huesped es obligatorio.').bail()
     .isString().bail().trim()
-    .isLength({ min: 3, max: 150 }).withMessage('El nombre del huesped debe tener entre 3 y 150 caracteres.'),
+    .isLength({ min: 3, max: 150 }).withMessage('El nombre del huesped debe tener entre 3 y 150 caracteres.').bail()
+    .custom(isValidName).withMessage(GUEST_MESSAGES.NAME).bail()
+    .custom(isFullName).withMessage(GUEST_MESSAGES.FULL_NAME),
 
+  // Cedula: solo numeros (9 digitos; DIMEX 11 o 12). Se guarda sin guiones
+  // ni espacios, asi la misma persona siempre se reconoce igual.
   body('guestIdentification')
     .exists({ checkFalsy: true }).withMessage('La identificacion del huesped es obligatoria.').bail()
-    .isString().bail().trim()
-    .isLength({ min: 5, max: 30 }).withMessage('La identificacion debe tener entre 5 y 30 caracteres.'),
+    .isString().withMessage(GUEST_MESSAGES.IDENTIFICATION).bail()
+    .custom((value) => normalizeIdentification(value) !== null).withMessage(GUEST_MESSAGES.IDENTIFICATION)
+    .customSanitizer((value) => normalizeIdentification(value) ?? value),
 
+  // Telefono: 8 digitos (se acepta +506, espacios y guiones); se guarda solo con los 8.
   body('guestPhone')
     .exists({ checkFalsy: true }).withMessage('El telefono del huesped es obligatorio.').bail()
-    .isString().bail().trim()
-    .isLength({ min: 8, max: 20 }).withMessage('El telefono del huesped no es valido.'),
+    .isString().withMessage(GUEST_MESSAGES.PHONE).bail()
+    .custom((value) => normalizePhone(value) !== null).withMessage(GUEST_MESSAGES.PHONE)
+    .customSanitizer((value) => normalizePhone(value) ?? value),
 
   body('guestEmail')
     .exists({ checkFalsy: true }).withMessage('El correo del huesped es obligatorio.').bail()
     .isString().bail().trim()
-    .isEmail().withMessage('El correo del huesped no tiene un formato valido.').bail()
-    .isLength({ max: 150 }).withMessage('El correo no puede superar 150 caracteres.'),
+    .custom(isValidEmail).withMessage(GUEST_MESSAGES.EMAIL),
 
   dateOnlyRule(body, 'checkInDate', 'La fecha de entrada es obligatoria.'),
   dateOnlyRule(body, 'checkOutDate', 'La fecha de salida es obligatoria.'),
