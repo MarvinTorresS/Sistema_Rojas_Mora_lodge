@@ -56,6 +56,8 @@ app.use('/api/event-hall-plans', require('./modules/reservasSalon/eventHallPlans
 // --- Manejo de rutas y errores (siempre al final) ---
 // HU-023 (Wagner): consulta del estado operativo de las mesas.
 app.use('/api/restaurant-tables', require('./modules/restaurante/tableStatus.routes'));
+// HU-029 (Wagner): consulta de importes; no crea facturas ni cierra cuentas.
+app.use('/api/restaurant-accounts', require('./modules/restaurante/accountTotal.routes'));
 
 app.use(notFoundHandler);
 app.use(errorHandler);
