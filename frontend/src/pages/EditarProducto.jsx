@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getProduct, editProduct } from '../services/productEditService';
+import { deleteProduct } from '../services/productDeleteService';
 
 export default function EditarProducto() {
   const [id, setId] = useState('');
@@ -10,9 +11,20 @@ export default function EditarProducto() {
   const [error, setError] = useState('');
   const [fields, setFields] = useState({});
   const [notice, setNotice] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [historyBlocked, setHistoryBlocked] = useState(false);
+
+  async function remove() {
+    setBusy(true); setError(''); setNotice(''); setHistoryBlocked(false);
+    try {
+      const response = await deleteProduct(product.productId);
+      setProduct(null); setForm(null); setId(''); setNotice(response.message);
+    } catch (err) { setError(err.message); setHistoryBlocked(err.code === 'PRODUCT_HAS_HISTORY'); }
+    finally { setBusy(false); setConfirmDelete(false); }
+  }
 
   async function lookup(event) {
-    event.preventDefault(); setError(''); setNotice(''); setFields({});
+    event.preventDefault(); setError(''); setNotice(''); setFields({}); setConfirmDelete(false); setHistoryBlocked(false);
     if (!/^\d+$/.test(id) || Number(id) < 1 || Number(id) > 2147483647) { setError('Ingresá un número de producto válido.'); return; }
     setBusy(true); setProduct(null); setForm(null);
     try { const result = await getProduct(Number(id)); setProduct(result); setForm({ name: result.name, category: result.category ?? '', price: String(result.price), stockQuantity: String(result.stockQuantity) }); }
@@ -20,7 +32,7 @@ export default function EditarProducto() {
     finally { setBusy(false); }
   }
   async function save(event) {
-    event.preventDefault(); setError(''); setNotice(''); setFields({});
+    event.preventDefault(); setError(''); setNotice(''); setFields({}); setConfirmDelete(false); setHistoryBlocked(false);
     const missing = Object.fromEntries(['name', 'category', 'price'].filter((key) => !form[key].trim()).map((key) => [key, 'Este campo es obligatorio.']));
     if (Object.keys(missing).length) { setFields(missing); setError('Los campos marcados con (*) son obligatorios'); return; }
     setBusy(true);
@@ -47,6 +59,12 @@ export default function EditarProducto() {
     </form>
     {error && <p role="alert" className="rounded-lg bg-coral-50 p-3 text-coral-700">{error}</p>}
     {notice && <p role="status" className="rounded-lg bg-teal-50 p-3 text-teal-700">{notice}</p>}
+    {historyBlocked && product && <div className="space-y-2">
+      <p>Podés dejarlo agotado sin perder su historial.</p>
+      <button disabled={busy} onClick={() => { setForm((current) => ({ ...current, stockQuantity: '0' })); setConfirmDelete(false); }}
+        className="rounded-lg border border-line px-4 py-2">Preparar existencias en cero</button>
+      <p className="text-sm text-muted">Luego revisá los datos y presioná Guardar cambios.</p>
+    </div>}
     {product && form && <form onSubmit={save} className="space-y-4 rounded-xl border border-line bg-surface p-5">
       <h2 className="text-lg font-semibold">Producto #{product.productId}</h2>
       <p className="text-sm font-medium">Estado guardado: {product.isAvailable ? 'Disponible' : 'Agotado'}</p>
@@ -58,5 +76,14 @@ export default function EditarProducto() {
       <p className="text-sm text-muted">Con cero existencias quedará agotado; al reponerlo volverá a estar disponible.</p>
       <button disabled={busy} className="rounded-lg bg-primary-700 px-4 py-2 text-white disabled:opacity-50">{busy ? 'Guardando…' : 'Guardar cambios'}</button>
     </form>}
+    {product && <div className="space-y-3 border-t border-line pt-4">
+      {!confirmDelete ? <button disabled={busy} onClick={() => setConfirmDelete(true)} className="rounded-lg border border-coral-200 px-4 py-2 text-coral-700">Eliminar producto</button>
+        : <div className="space-y-3">
+          <p>¿Está seguro de que desea eliminar este producto? Esta acción no se puede deshacer</p>
+          <p className="text-sm">Producto #{product.productId}: {product.name}</p>
+          <div className="flex flex-wrap gap-3"><button disabled={busy} onClick={remove} className="rounded-lg bg-coral-600 px-4 py-2 text-white">Confirmar eliminación</button>
+            <button disabled={busy} onClick={() => setConfirmDelete(false)} className="rounded-lg border border-line px-4 py-2">Cancelar eliminación</button></div>
+        </div>}
+    </div>}
   </section>;
 }

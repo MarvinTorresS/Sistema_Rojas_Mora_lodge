@@ -61,6 +61,7 @@ app.use('/api/restaurant-tables', require('./modules/restaurante/tableReactivate
 app.use('/api/restaurant-accounts', require('./modules/restaurante/accountTotal.routes'));
 // HU-116 (Wagner): consultar y editar un producto existente.
 app.use('/api/restaurant-products', require('./modules/restaurante/productEdit.routes'));
+app.use('/api/restaurant-products', require('./modules/restaurante/productDelete.routes'));
 
 app.use(notFoundHandler);
 app.use(errorHandler);
