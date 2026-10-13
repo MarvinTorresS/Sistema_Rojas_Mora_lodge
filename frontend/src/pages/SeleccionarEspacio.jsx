@@ -9,7 +9,7 @@ import { ArrowLeft, CircleDot, PartyPopper, Home, UtensilsCrossed, ChevronRight 
  * pedido de Marvin: "trabajamos con ese dashboard principal nada más").
  *
  * Cada opción es un <Link> real de react-router-dom: al elegir un
- * espacio, navega a la página de ese módulo (/cancha, /salon, /cabanas,
+ * espacio, navega a la página de ese módulo (/cancha, /salon, /cabinas,
  * /restaurante). Todavía no hay estado de "reserva en progreso" — cada
  * módulo se construye por separado según su propia HU.
  */
@@ -27,10 +27,10 @@ const ESPACIOS = [
     detalle: '3 planes · hasta 80 personas',
   },
   {
-    to: '/cabanas',
+    to: '/cabinas',
     icon: Home,
-    titulo: 'Cabaña',
-    detalle: '4 cabañas · 3 disponibles hoy',
+    titulo: 'Cabina',
+    detalle: '4 cabinas · 3 disponibles hoy',
   },
   {
     to: '/restaurante',
@@ -51,7 +51,7 @@ function SeleccionarEspacio() {
       <h2 className="mt-4 font-display text-2xl font-semibold text-primary-900">Nueva reserva</h2>
       <p className="mt-1 text-sm text-muted">¿Qué espacio vas a reservar?</p>
       <p className="mt-3 text-xs leading-relaxed text-faint">
-        Cada espacio cobra distinto: la cancha por hora, el salón por plan, la cabaña por noche y
+        Cada espacio cobra distinto: la cancha por hora, el salón por plan, la cabina por noche y
         la mesa por comensales.
       </p>
 

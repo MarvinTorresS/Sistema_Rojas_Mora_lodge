@@ -56,6 +56,14 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.INTEGER,
       field: 'event_hall_plan_id',
     },
+    // Horas extra contratadas en una reserva de salon (se cobran a la tarifa
+    // extra_hour_price del plan). 0 en todo lo demas. Migracion 20261010000001.
+    extraHours: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0,
+      field: 'extra_hours',
+    },
     status: {
       type: DataTypes.ENUM('pending', 'active', 'rejected', 'checked_in', 'completed', 'cancelled'),
       allowNull: false,

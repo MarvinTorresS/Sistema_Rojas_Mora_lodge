@@ -19,6 +19,12 @@ function errorHandler(error, req, res, _next) {
   res.status(status).json({
     error: {
       message: error.message || 'Error interno del servidor',
+      // code y details solo existen en DomainError que los declaran
+      // (ver domainError.util.js). `details` usa la misma clave que
+      // las respuestas 422 de los validators, para que el frontend
+      // lea siempre el mismo lugar.
+      ...(error.code !== undefined && { code: error.code }),
+      ...(error.details !== undefined && { details: error.details }),
       ...(isDev && { stack: error.stack }),
     },
   });

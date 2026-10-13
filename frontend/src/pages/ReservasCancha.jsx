@@ -229,6 +229,15 @@ function toLocalDatetimeInput(value) {
   return `${isoToLocalDate(value)}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
 }
 
+// CA-2 (HU-006): el motivo de cancelacion debe tener contenido (no vacio,
+// no solo espacios) para poder pasar al paso de confirmacion / habilitar el
+// boton "Confirmar". Se exporta como funcion pura para poder probarla de
+// forma aislada, sin depender del componente ni del DOM.
+export function canConfirmCancellation(reason) {
+  return Boolean((reason ?? '').trim());
+}
+
+
 function ReservasCancha() {
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [reservas, setReservas] = useState(RESERVAS_INICIALES);
@@ -254,7 +263,7 @@ function ReservasCancha() {
   const reservationsRequestId = useRef(0);
   const isSavingEdit = editState.status === 'loading';
 
-  // === HU-006 (Alison): cancelar una reserva activa ===
+  // === HU-006 cancelar una reserva activa ===
   // Ya NO es un panel aparte con su propio "booking en foco": vive
   // DENTRO del panel de Editar (mismo editingBooking), como pidio
   // Alison. cancelStep controla en cual de los 3 pasos esta el panel:
@@ -295,8 +304,7 @@ function ReservasCancha() {
   // Todavia NO llama al backend aqui.
   function handleGoToCancelConfirm(event) {
     event.preventDefault();
-    const trimmedReason = cancelForm.reason.trim();
-    if (!trimmedReason) {
+ if (!canConfirmCancellation(cancelForm.reason)) { 
       setCancelState({ status: 'error', message: 'El motivo de cancelación es obligatorio.' });
       return;
     }
@@ -392,7 +400,7 @@ function ReservasCancha() {
     }
   }
 
-  // === HU-004 (Alison): filtro de reservas del día por estado ===
+  // === HU-004 filtro de reservas del día por estado ===
   // Opciones tal como las especifica la historia de usuario (no los 6
   // estados internos del ENUM de Booking.status): "Todas, Activas,
   // Canceladas", por defecto "Todas".
@@ -507,7 +515,7 @@ function ReservasCancha() {
   const reservasDelDia = reservas.filter((r) => r.date === formData.date);
   const slots = buildSlotsFromReservations(reservasDelDia, formData.date);
 
-  // HU-004 (Alison): la tabla de "Buscar reservas" tambien respeta el
+  // HU-004 la tabla de "Buscar reservas" tambien respeta el
   // Estado elegido en el mismo fieldset. HU-003 (Kendall) no acepta
   // status como criterio en el backend, asi que el filtro se aplica
   // aqui, sobre los resultados ya traidos, para que "Cliente: alison" +
@@ -897,7 +905,7 @@ function ReservasCancha() {
                     completó el motivo de cancelación" — unica condicion,
                     tal como lo dice la HU. Al presionarlo NO se cancela
                     todavia: solo pasa al paso 3 (Si/No). */}
-                <button type="submit" disabled={!cancelForm.reason.trim()}
+                <button type="submit" disabled={!canConfirmCancellation(cancelForm.reason)}
                   className="w-full rounded-lg bg-coral-600 px-4 py-2 text-sm text-white disabled:opacity-60">Confirmar</button>
                 <button type="button" onClick={handleBackToEdit} className="w-full rounded-lg border border-line px-4 py-2 text-sm">Volver</button>
               </fieldset>
@@ -927,7 +935,7 @@ function ReservasCancha() {
                 <button type="submit" className="w-full rounded-lg bg-primary-700 px-4 py-2 text-sm text-white disabled:opacity-60">
                   {isSavingEdit ? 'Guardando…' : 'Guardar cambios'}
                 </button>
-                {/* HU-006 (Alison): "Eliminar reserva" vive DENTRO del
+                {/* HU-006 "Eliminar reserva" vive DENTRO del
                     panel de Editar, como pidio Alison — no es un boton
                     aparte en la tabla. Al presionarlo se despliega el
                     paso de motivo (cancelStep = 'reason'). */}

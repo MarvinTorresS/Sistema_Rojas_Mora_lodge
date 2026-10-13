@@ -31,7 +31,36 @@ async function createBooking(req, res, next) {
   }
 }
 
+async function listBookings(req, res, next) {
+  try {
+    const { items, ...meta } = await reservasSalonService.listHallBookings(req.query);
+    return res.json({ data: items, meta });
+  } catch (error) { return next(error); }
+}
+
+async function getBooking(req, res, next) {
+  try {
+    return res.json({ data: await reservasSalonService.getHallBooking(req.params.bookingId) });
+  } catch (error) { return next(error); }
+}
+
+async function updateBooking(req, res, next) {
+  try {
+    return res.json({ data: await reservasSalonService.updateHallBooking(req.params.bookingId, req.body) });
+  } catch (error) { return next(error); }
+}
+
+async function cancelBooking(req, res, next) {
+  try {
+    return res.json({ data: await reservasSalonService.cancelHallBooking(req.params.bookingId, req.body) });
+  } catch (error) { return next(error); }
+}
+
 module.exports = {
+  cancelBooking,
+  listBookings,
+  getBooking,
+  updateBooking,
   checkAvailability,
   createBooking,
 };

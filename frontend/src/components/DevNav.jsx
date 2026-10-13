@@ -14,7 +14,7 @@ const MODULES = [
   { to: '/', label: '← Dashboard (prototipo)' },
   { to: '/cancha', label: 'Cancha sintética' },
   { to: '/salon', label: 'Salón de eventos' },
-  { to: '/cabanas', label: 'Cabañas' },
+  { to: '/cabinas', label: 'Cabinas' },
   { to: '/restaurante', label: 'Restaurante' },
   { to: '/usuarios', label: 'Usuarios y roles' },
   { to: '/clientes', label: 'Clientes' },

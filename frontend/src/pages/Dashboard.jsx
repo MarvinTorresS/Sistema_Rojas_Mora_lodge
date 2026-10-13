@@ -24,7 +24,7 @@ import {
  * pantalla de su propia tarea/HU sin tocar este archivo).
  *
  * "Registrar reserva" lleva a SeleccionarEspacio.jsx, que si navega a
- * los módulos reales (cancha, salón, cabañas, restaurante). Las otras 8
+ * los módulos reales (cancha, salón, cabinas, restaurante). Las otras 8
  * tareas llevan a una pantalla PantallaPendiente.jsx con el mismo ícono
  * y título de la tarjeta, hasta que se implemente su HU correspondiente.
  *
@@ -37,7 +37,7 @@ const TASKS = [
     to: '/reservar',
     icon: CalendarPlus,
     n: 'Registrar reserva',
-    s: 'Cancha, salón, cabaña o mesa',
+    s: 'Cancha, salón, cabina o mesa',
     badge: 0,
   },
   {
@@ -192,7 +192,7 @@ function Dashboard() {
               <Home size={16} strokeWidth={1.9} />
             </span>
             <div className="min-w-0 flex-1">
-              <b className="block text-[13px] font-semibold">Cabaña 3 · María Jiménez</b>
+              <b className="block text-[13px] font-semibold">Cabina 3 · María Jiménez</b>
               <span className="text-[11.5px] text-faint">
                 Salida hoy a las 12 m.d. · falta cerrar la cuenta del restaurante (₡14.500)
               </span>

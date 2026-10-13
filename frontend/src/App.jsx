@@ -4,7 +4,6 @@ import {
   Receipt,
   CircleCheck,
   Banknote,
-  Clock,
   Lock,
   UserPlus,
   ScrollText,
@@ -15,6 +14,14 @@ import Dashboard from './pages/Dashboard.jsx';
 import SeleccionarEspacio from './pages/SeleccionarEspacio.jsx';
 import ReservasCancha from './pages/ReservasCancha.jsx';
 import ReservasSalon from './pages/ReservasSalon.jsx';
+import SeleccionarEspacio from './pages/SeleccionarEspacio.jsx';
+import ReservasCancha from './pages/ReservasCancha.jsx';
+import ReservasSalon from './pages/ReservasSalon.jsx';
+import ReservasCabina from './pages/ReservasCabina.jsx';
+import ExtenderHospedaje from './pages/ExtenderHospedaje.jsx';
+import TarifasCabina from './pages/TarifasCabina.jsx';
+import PlanesSalon from './pages/PlanesSalon.jsx';
+import BuscarReservaCabina from './pages/BuscarReservaCabina.jsx';
 import AdminPlanesSalon from './pages/AdminPlanesSalon.jsx';
 
 /**
@@ -24,7 +31,7 @@ import AdminPlanesSalon from './pages/AdminPlanesSalon.jsx';
  * elegido, Opción 3 · Por tareas). Cada una de las 9 tarjetas del
  * Dashboard navega a su propia ruta:
  *   - "Registrar reserva" → /reservar (selección de espacio) → el módulo
- *     real correspondiente (/cancha, /salon, /cabanas, /restaurante).
+ *     real correspondiente (/cancha, /salon, /cabinas, /restaurante).
  *   - Las otras 8 tareas → /tareas/<id>, con una pantalla de "pendiente
  *     de implementar" hasta que exista su HU.
  *
@@ -56,16 +63,16 @@ function App() {
               la misma pantalla de arriba, pero ReservasSalon.jsx solo
               cubre el flujo de RESERVA (con una lista de planes fija,
               ver TODO de HU-009 ahí); administrar los planes en sí
-              (buscar/editar/eliminar) necesita su propia pantalla.
-              Wagner implementó HU-010/HU-011/HU-012 acá; cuando a Alison
-              le toque HU-008 (crear) y HU-009 (listar todos), amplía
-              esta misma página en vez de crear una tercera. */}
+              (buscar/editar/eliminar) necesita su propia pantalla. */}
           <Route path="salon/planes" element={<AdminPlanesSalon />} />
-          {/* Sprint 3 — Kendall */}
-          <Route
-            path="cabanas"
-            element={<PantallaPendiente titulo="Cabañas" huRelacionadas="HU-016 a HU-022, HU-127" />}
-          />
+          {/* Sprint 3 — Marvin (HU-016, registro). HU-017 a HU-022 y HU-127
+              se suman a esta misma página: no hace falta un
+              PantallaPendiente aparte por HU. */}
+          <Route path="cabinas" element={<ReservasCabina />} />
+          {/* HU-128 (Marvin) — tarifa por noche de las cabinas (rol Administrador). */}
+          <Route path="cabinas/tarifas" element={<TarifasCabina />} />
+          {/* HU-018/HU-019 — buscar una reserva de cabina por huésped y modificarla. */}
+          <Route path="cabinas/buscar" element={<BuscarReservaCabina />} />
           {/* Sprint 4 — Alison */}
           <Route
             path="restaurante"
@@ -124,10 +131,7 @@ function App() {
             path="tareas/sinpe"
             element={<PantallaPendiente icon={Banknote} titulo="Verificar SINPE" huRelacionadas="HU-077, HU-078" />}
           />
-          <Route
-            path="tareas/extender"
-            element={<PantallaPendiente icon={Clock} titulo="Extender hospedaje" huRelacionadas="HU-127" />}
-          />
+          <Route path="tareas/extender" element={<ExtenderHospedaje />} />
           <Route
             path="tareas/bloquear"
             element={<PantallaPendiente icon={Lock} titulo="Bloquear espacio" huRelacionadas="HU-079 a HU-101" />}

@@ -1,21 +1,43 @@
 'use strict';
 
+'use strict';
+
 // Logica de negocio del CRUD de planes de precio del salon de eventos
 // (tabla event_hall_pricing_plans). Entidad DISTINTA de las reservas
-// del salon (reservasSalon.service.js: HU-007, HU-013 a HU-015) aunque
-// comparten la misma area funcional "salon" -- ver la nota en
-// reservasSalon.routes.js sobre por que se separan en dos modulos.
-// Mismos principios de capas que el resto del backend: sin req/res,
-// DomainError con statusCode cuando falla una regla de NEGOCIO.
+// del salon, pero se integra con el mismo dominio y comparte validacion
+// con la version de Alison. Se consolidan tanto las funciones de listado
+// y registro como las de busqueda, edicion y baja.
 const { Op } = require('sequelize');
-const { EventHallPricingPlan, Booking } = require('../../models');
+const {
+  Resource,
+  EventHallPricingPlan,
+  Booking,
+  sequelize,
+} = require('../../models');
 const { DomainError } = require('../../utils/domainError.util');
 const { ACTIVE_BOOKING_STATUSES } = require('../../utils/bookingOverlap.util');
+const {
+  normalizePlanName,
+  planNameKey,
+  getPlanNameError,
+  getPlanHoursError,
+  getPlanPriceError,
+  parseHours,
+  normalizePrice,
+  normalizeIncludedServices,
+  serializeServices,
+  parseStoredServices,
+  normalizeDepositPercentage,
+  normalizeExtraHourPrice,
+} = require('./eventHallPlans.util');
 
-// Aplana una fila de EventHallPricingPlan (instancia Sequelize u objeto
-// plano) a la forma que consume el frontend, convirtiendo `price` a
-// numero (Sequelize devuelve DECIMAL como string para no perder
-// precision, pero el frontend necesita un numero para operar con el).
+const EVENT_HALL_RESOURCE_TYPE = 'event_hall';
+const PLAN_ERROR_CODES = {
+  INVALID_PLAN: 'INVALID_PLAN',
+  DUPLICATE_PLAN_NAME: 'DUPLICATE_PLAN_NAME',
+  HALL_NOT_SPECIFIED: 'HALL_NOT_SPECIFIED',
+};
+
 function mapPlan(plan) {
   const row = typeof plan.get === 'function' ? plan.get({ plain: true }) : plan;
   return {
@@ -24,13 +46,24 @@ function mapPlan(plan) {
     planName: row.planName,
     hours: row.hours,
     price: Number(row.price),
+    includedServices: parseStoredServices(row.includedServices),
+    depositPercentage: row.depositPercentage === null || row.depositPercentage === undefined
+      ? null
+      : Number(row.depositPercentage),
+    extraHourPrice: row.extraHourPrice === null || row.extraHourPrice === undefined
+      ? null
+      : Number(row.extraHourPrice),
   };
 }
 
-// HU-010 — Buscar un plan de precios del salon por nombre.
-// CA-1 Busqueda exitosa; CA-2 Sin resultados de busqueda: se responde
-// 200 con un arreglo vacio, NUNCA 404 -- "no hay planes con ese nombre"
-// es un resultado valido de una busqueda, no un error del sistema.
+function toPlanView(plan) {
+  return mapPlan(plan);
+}
+
+function comparePlans(a, b) {
+  return a.hours - b.hours || a.price - b.price || a.planId - b.planId;
+}
+
 async function searchPlansByName({ name }) {
   const plans = await EventHallPricingPlan.findAll({
     where: { planName: { [Op.substring]: name } },
@@ -39,11 +72,6 @@ async function searchPlansByName({ name }) {
   return plans.map(mapPlan);
 }
 
-// HU-011 — Editar los datos de un plan de precios existente del salon.
-// CA-3 (campos obligatorios incompletos) se valida en la forma
-// (eventHallPlans.validator.js); aqui solo reglas de negocio: CA-1
-// (edicion exitosa) y CA-2 (edicion de un plan con reservas futuras
-// asociadas).
 async function updateHallPlan(planId, { planName, hours, price }) {
   const plan = await EventHallPricingPlan.findByPk(planId);
   if (!plan) {
@@ -52,13 +80,6 @@ async function updateHallPlan(planId, { planName, hours, price }) {
 
   await plan.update({ planName, hours, price });
 
-  // CA-2: el precio y la duracion del plan NO quedan "congelados" por
-  // reserva (a diferencia de account_items.unit_price en el
-  // restaurante, que si guarda el precio vigente al momento de agregar
-  // el producto -- ver Diccionario de Datos seccion 3.15). Por eso
-  // editar un plan con reservas futuras no se bloquea, pero conviene
-  // informarle al Administrador cuantas reservas ya confirmadas usaran
-  // los datos nuevos, para que decida si avisar al cliente.
   const futureBookingsCount = await Booking.count({
     where: {
       eventHallPlanId: plan.planId,
@@ -70,20 +91,6 @@ async function updateHallPlan(planId, { planName, hours, price }) {
   return { plan: mapPlan(plan), futureBookingsCount };
 }
 
-// HU-012 — Eliminar de forma permanente un plan de precios del salon.
-// CA-1 Eliminacion exitosa; CA-2 Intento de eliminar un plan con
-// reservas activas.
-//
-// Regla de baja fisica condicionada (Diccionario de Datos, seccion 1.6
-// / Control de Cambios item 13): un catalogo operativo solo se elimina
-// FISICAMENTE cuando no posee ningun registro asociado. La FK
-// bookings.event_hall_plan_id -> event_hall_pricing_plans.plan_id
-// rechazaria el DELETE a nivel de motor de cualquier forma si existiera
-// CUALQUIER reserva que referencie el plan (sin importar su estado: una
-// FK no distingue 'cancelled' de 'active'); se valida antes de intentar
-// el DELETE para responder con un mensaje claro (409) en vez de dejar
-// escapar un error crudo de MySQL con detalle tecnico (estandar 8.2.5 /
-// 8.4 de la catedra).
 async function deleteHallPlan(planId) {
   const plan = await EventHallPricingPlan.findByPk(planId);
   if (!plan) {
@@ -105,9 +112,132 @@ async function deleteHallPlan(planId) {
   return { planId: plan.planId };
 }
 
+async function listEventHallPlans({ resourceId, hours, search } = {}) {
+  const where = {};
+  if (resourceId) where.resourceId = Number(resourceId);
+
+  const rows = await EventHallPricingPlan.findAll({ where, order: [['planId', 'ASC']] });
+  const all = rows.map(toPlanView).sort(comparePlans);
+
+  const hoursFilter = hours ? Number(hours) : null;
+  const searchKey = typeof search === 'string' ? planNameKey(search) : '';
+
+  const items = all.filter((plan) => (
+    (hoursFilter === null || plan.hours === hoursFilter)
+    && (!searchKey || planNameKey(plan.planName).includes(searchKey))
+  ));
+
+  const availableHours = [...new Set(all.map((plan) => plan.hours))].sort((a, b) => a - b);
+  return { items, total: items.length, totalWithoutFilters: all.length, availableHours };
+}
+
+const DEFAULT_HALL = {
+  resourceId: 2,
+  resourceType: EVENT_HALL_RESOURCE_TYPE,
+  name: 'Salón de eventos principal',
+  description: 'Salón de eventos para actividades sociales y corporativas.',
+  status: 'available',
+};
+
+async function provisionDefaultHall(transaction) {
+  const idTaken = await Resource.findByPk(DEFAULT_HALL.resourceId, { transaction });
+  const { resourceId, ...withoutId } = DEFAULT_HALL;
+  try {
+    return await Resource.create(idTaken ? withoutId : DEFAULT_HALL, { transaction });
+  } catch (error) {
+    const existing = await Resource.findOne({
+      where: { resourceType: EVENT_HALL_RESOURCE_TYPE },
+      order: [['resourceId', 'ASC']],
+      transaction,
+    }).catch(() => null);
+    if (existing) return existing;
+    throw error;
+  }
+}
+
+async function resolveHall(resourceId, transaction) {
+  if (resourceId) {
+    const resource = await Resource.findOne({
+      where: { resourceId: Number(resourceId), resourceType: EVENT_HALL_RESOURCE_TYPE },
+      lock: transaction.LOCK.UPDATE,
+      transaction,
+    });
+    if (!resource) throw new DomainError('El salón indicado no existe.', 404);
+    return resource;
+  }
+
+  const halls = await Resource.findAll({
+    where: { resourceType: EVENT_HALL_RESOURCE_TYPE },
+    order: [['resourceId', 'ASC']],
+    transaction,
+  });
+  if (halls.length === 0) {
+    return provisionDefaultHall(transaction);
+  }
+  if (halls.length > 1) {
+    throw new DomainError('Indique el salón al que pertenece el plan.', 422, {
+      code: PLAN_ERROR_CODES.HALL_NOT_SPECIFIED,
+    });
+  }
+  return Resource.findByPk(halls[0].resourceId, { lock: transaction.LOCK.UPDATE, transaction });
+}
+
+async function createEventHallPlan({
+  resourceId, planName, hours, price, includedServices, depositPercentage, extraHourPrice,
+}) {
+  const formError = getPlanNameError(planName)
+    || getPlanHoursError(hours)
+    || getPlanPriceError(price);
+  const services = normalizeIncludedServices(includedServices);
+  const deposit = normalizeDepositPercentage(depositPercentage);
+  const extraHour = normalizeExtraHourPrice(extraHourPrice);
+  const firstError = formError || services.error || deposit.error || extraHour.error;
+  if (firstError) {
+    throw new DomainError(firstError, 422, { code: PLAN_ERROR_CODES.INVALID_PLAN });
+  }
+
+  const name = normalizePlanName(planName);
+
+  return sequelize.transaction(async (transaction) => {
+    const hall = await resolveHall(resourceId, transaction);
+
+    const existing = await EventHallPricingPlan.findAll({
+      where: { resourceId: hall.resourceId },
+      attributes: ['planId', 'planName'],
+      lock: transaction.LOCK.UPDATE,
+      transaction,
+    });
+    const key = planNameKey(name);
+    if (existing.some((plan) => planNameKey(plan.planName) === key)) {
+      throw new DomainError('Ya existe un plan con ese nombre', 409, {
+        code: PLAN_ERROR_CODES.DUPLICATE_PLAN_NAME,
+        details: [{ field: 'planName', message: 'Ya existe un plan con ese nombre' }],
+      });
+    }
+
+    const created = await EventHallPricingPlan.create({
+      resourceId: hall.resourceId,
+      planName: name,
+      hours: parseHours(hours),
+      price: normalizePrice(price),
+      includedServices: serializeServices(services.services),
+      depositPercentage: deposit.percentage,
+      extraHourPrice: extraHour.price,
+    }, { transaction });
+
+    return toPlanView(created);
+  });
+}
+
 module.exports = {
+  PLAN_ERROR_CODES,
   mapPlan,
+  toPlanView,
+  comparePlans,
   searchPlansByName,
   updateHallPlan,
   deleteHallPlan,
+  listEventHallPlans,
+  createEventHallPlan,
+};
 };
