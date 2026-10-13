@@ -4,6 +4,7 @@
 // cobran a la tarifa por hora extra del plan. Archivo aparte de
 // reservasSalon.service.test.js para no mezclar las pruebas de cada quien.
 jest.mock('../../src/models', () => ({
+  AuditLog: { create: jest.fn(), findAll: jest.fn(async () => []) },
   Booking: { findAndCountAll: jest.fn(), findOne: jest.fn(), findByPk: jest.fn(), create: jest.fn() },
   Resource: { findOne: jest.fn() },
   Customer: { findOrCreate: jest.fn() },

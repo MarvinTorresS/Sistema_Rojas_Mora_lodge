@@ -13,8 +13,8 @@
 
 jest.mock('../../src/models', () => ({
   EventHallPricingPlan: { findAll: jest.fn(), findByPk: jest.fn() },
-  Booking: { count: jest.fn() },
-  AuditLog: { create: jest.fn() },
+  Booking: { count: jest.fn(), findAll: jest.fn(async () => []) },
+  AuditLog: { create: jest.fn(), findAll: jest.fn(async () => []) },
   sequelize: { transaction: jest.fn(async (callback) => callback({ LOCK: { UPDATE: 'UPDATE' } })) },
 }));
 
@@ -130,6 +130,18 @@ describe('searchPlansByName (HU-010)', () => {
 // ---------------------------------------------------------------------
 describe('updateHallPlan (HU-011)', () => {
   const payload = { planName: 'Plan Oro', hours: 6, price: 300000 };
+
+  it('conserva condiciones de reservas antiguas antes de editar sin sobrescribir registros existentes', async () => {
+    EventHallPricingPlan.findByPk.mockResolvedValue(makePlanInstance());
+    Booking.findAll.mockResolvedValueOnce([{ bookingId: 1 }, { bookingId: 2 }]);
+    AuditLog.findAll.mockResolvedValueOnce([{ entityId: 2, details: JSON.stringify({ plan: { price: 100000, hours: 4 } }) }]);
+    Booking.count.mockResolvedValue(2);
+    await updateHallPlan(5, payload);
+    const bookingEntries = AuditLog.create.mock.calls.map(([entry]) => entry).filter((entry) => entry.entityType === 'booking');
+    expect(bookingEntries).toHaveLength(1);
+    expect(bookingEntries[0].entityId).toBe(1);
+    expect(JSON.parse(bookingEntries[0].details).plan.price).toBe(150000);
+  });
 
   it('registra el editor y las condiciones anteriores y nuevas en la misma transaccion', async () => {
     EventHallPricingPlan.findByPk.mockResolvedValue(makePlanInstance());

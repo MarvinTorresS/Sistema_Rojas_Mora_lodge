@@ -2,7 +2,8 @@
 
 Responsable: Wagner. Sprint 2.
 
-Las reservas guardan las condiciones contratadas en `bookings.hall_plan_snapshot`.
+Las reservas guardan las condiciones contratadas en la tabla existente `audit_log`,
+con la acción `hall_booking_plan_contracted` y el plan en `details`.
 Editar un plan del catálogo conserva el precio, la duración y la tarifa de horas
 extra de las reservas existentes. Seleccionar expresamente un plan en la edición
 de una reserva fija las condiciones vigentes de ese plan.
@@ -16,29 +17,29 @@ La pantalla muestra «Plan actualizado exitosamente» y, cuando hay reservas
 futuras, «Este plan tiene reservas futuras; el precio nuevo solo aplicará a
 solicitudes nuevas».
 
-## Preparación local
+## Base de datos
 
-Con Docker y MySQL disponibles, ejecutar desde `backend`:
+Este ajuste no requiere migraciones, columnas nuevas ni cambios de esquema.
+Antes de editar un plan se registran las condiciones actuales de las reservas
+antiguas que no tengan una entrada de condiciones contratadas. Las entradas ya
+existentes no se sobrescriben. No se pueden recuperar precios históricos que
+nunca se hayan registrado.
 
-```powershell
-pnpm migrate
-```
-
-La migración `20261012000001-preserve-contracted-hall-plan.js` agrega el campo y
-conserva las condiciones actuales para las reservas antiguas. No recupera precios
-históricos que no se hayan registrado. No usar `migrate:undo` sobre datos que se
-necesiten conservar: eliminaría las condiciones contratadas guardadas.
+Crear una reserva y registrar sus condiciones se ejecuta en una transacción.
+Las consultas del listado leen las condiciones registradas en una consulta por
+página. Si el registro está corrupto, se informa el error en lugar de reemplazar
+silenciosamente el importe contratado por el precio actual.
 
 ## Comprobaciones realizadas
 
-- Backend: 304 pruebas pasan y una permanece marcada TODO.
+- Backend: 306 pruebas pasan y una permanece marcada TODO.
 - Interfaz HU-011: pasa la prueba de la alerta sobre reservas futuras.
 - Compilación del frontend: correcta.
 
 ## Comprobaciones pendientes
 
-La migración todavía no se ha ejecutado contra MySQL porque el motor de Docker
-local no responde. También falta verificar la identidad del editor al integrar
+Falta probar las operaciones contra MySQL porque el motor de Docker local no
+responde. También falta verificar la identidad del editor al integrar
 autenticación y realizar el recorrido manual para grabar evidencias.
 
 1. Registrar una reserva con un plan y una hora extra. Anotar los importes.

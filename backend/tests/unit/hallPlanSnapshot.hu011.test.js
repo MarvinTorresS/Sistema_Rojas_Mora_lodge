@@ -1,6 +1,7 @@
 'use strict';
 
 jest.mock('../../src/models', () => ({
+  AuditLog: { create: jest.fn(), findAll: jest.fn() },
   Booking: { create: jest.fn(), findOne: jest.fn(), findByPk: jest.fn(), findAndCountAll: jest.fn() },
   Resource: { findOne: jest.fn() }, ResourceBlock: { findOne: jest.fn() },
   Customer: { findOrCreate: jest.fn() },
@@ -13,6 +14,7 @@ const { snapshotHallPlan } = require('../../src/modules/reservasSalon/hallPlanSn
 
 let plan;
 let booking;
+let entries;
 beforeEach(() => {
   jest.clearAllMocks();
   const start = new Date(Date.now() + 86400000);
@@ -22,8 +24,13 @@ beforeEach(() => {
     status: 'active', extraHours: 1, startDatetime: start,
     endDatetime: new Date(start.getTime() + 5 * 3600000),
     eventHallPlan: plan, resource: { resourceId: 2, name: 'Salon' },
-    hallPlanSnapshot: JSON.stringify(snapshotHallPlan(plan)), save: jest.fn(),
+    save: jest.fn(),
   };
+  entries = [{ auditId: 1, entityId: 7, details: JSON.stringify({ plan: snapshotHallPlan(plan) }) }];
+  models.AuditLog.findAll.mockImplementation(async () => [...entries].reverse());
+  models.AuditLog.create.mockImplementation(async (entry) => {
+    entries.push({ auditId: entries.length + 1, ...entry });
+  });
   models.Resource.findOne.mockResolvedValue({ resourceId: 2, status: 'available' });
   models.ResourceBlock.findOne.mockResolvedValue(null);
   models.Customer.findOrCreate.mockResolvedValue([{ customerId: 3 }]);
@@ -37,7 +44,8 @@ beforeEach(() => {
 
 test('una reserva nueva conserva el precio y las horas contratadas', async () => {
   const result = await createHallBooking({ resourceId: 2, planId: 1, customerName: 'Wagner', customerPhone: '88888888', startDatetime: booking.startDatetime, endDatetime: booking.endDatetime, extraHours: 1 });
-  expect(JSON.parse(result.booking.hallPlanSnapshot)).toMatchObject({ price: 150000, hours: 4, extraHourPrice: 10000 });
+  expect(JSON.parse(entries.at(-1).details).plan).toMatchObject({ price: 150000, hours: 4, extraHourPrice: 10000 });
+  expect(models.Booking.create.mock.calls[0][0]).not.toHaveProperty('hallPlanSnapshot');
   expect(result.totalPrice).toBe(160000);
 });
 
@@ -53,5 +61,10 @@ test('seleccionar expresamente otro plan actualiza las condiciones contratadas',
   const next = { ...plan, planId: 2, price: '250000.00' };
   models.EventHallPricingPlan.findAll.mockResolvedValue([plan, next]);
   await updateHallBooking(7, { planId: 2 });
-  expect(JSON.parse(booking.hallPlanSnapshot)).toMatchObject({ planId: 2, price: 250000 });
+  expect(JSON.parse(entries.at(-1).details).plan).toMatchObject({ planId: 2, price: 250000 });
+});
+
+test('un registro financiero corrupto se informa y no se reemplaza por el precio actual', async () => {
+  entries[0].details = '{roto';
+  await expect(getHallBooking(7)).rejects.toThrow();
 });

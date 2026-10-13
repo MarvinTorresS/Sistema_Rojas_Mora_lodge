@@ -9,7 +9,7 @@ const {
   Booking, Resource, ResourceBlock, EventHallPricingPlan, Customer, sequelize,
 } = require('../../models');
 const { DomainError } = require('../../utils/domainError.util');
-const { snapshotHallPlan, contractedHallPlan } = require('./hallPlanSnapshot.util');
+const { contractedHallPlan, contractedHallPlans, recordContractedHallPlan } = require('./hallPlanSnapshot.util');
 const { buildBookingOverlapWhere, buildBlockOverlapWhere } = require('../../utils/bookingOverlap.util');
 const {
   assertExtraHours, parseExtraHours, extraHoursCost, totalPrice,
@@ -125,6 +125,10 @@ async function findOrCreateCustomer({ customerName, customerPhone }) {
 // HU-013 — Registrar la reserva del salon con el plan de precios
 // seleccionado.
 async function createHallBooking(payload) {
+  return sequelize.transaction((transaction) => createHallBookingInTransaction(payload, transaction));
+}
+
+async function createHallBookingInTransaction(payload, transaction) {
   const {
     resourceId, planId, customerName, customerPhone, startDatetime, endDatetime, extraHours,
   } = payload;
@@ -152,7 +156,7 @@ async function createHallBooking(payload) {
   // El plan debe existir y pertenecer a ESTE salon: un plan de otro
   // recurso (si algun dia hay mas de un salon) no deberia poder
   // asignarse por error.
-  const plan = await EventHallPricingPlan.findOne({ where: { planId, resourceId } });
+  const plan = await EventHallPricingPlan.findOne({ where: { planId, resourceId }, transaction, lock: transaction.LOCK.UPDATE });
   if (!plan) {
     throw new DomainError('El plan de precios indicado no existe para este salon.', 404);
   }
@@ -197,12 +201,12 @@ async function createHallBooking(payload) {
     customerId: customer.customerId,
     originChannel: 'staff',
     eventHallPlanId: plan.planId,
-    hallPlanSnapshot: JSON.stringify(snapshotHallPlan(plan)),
     startDatetime: start,
     endDatetime: end,
     extraHours: extra,
     status: 'active',
-  });
+  }, { transaction });
+  await recordContractedHallPlan({ bookingId: booking.bookingId, plan, transaction });
 
   // CA-3: calculo automatico del anticipo. Se redondea a 2 decimales
   // (moneda) para no arrastrar errores de punto flotante hacia la
@@ -235,17 +239,17 @@ function mapPlan(plan) {
 }
 
 // HU-014: DTO explicito; nunca exponer credenciales del cliente.
-function mapHallBooking(booking) {
+function mapHallBooking(booking, recordedPlan) {
   const row = typeof booking.get === 'function' ? booking.get({ plain: true }) : booking;
   return {
     bookingId: row.bookingId, startDatetime: row.startDatetime, endDatetime: row.endDatetime,
     status: row.status, originChannel: row.originChannel,
     resource: row.resource ? { resourceId: row.resource.resourceId, name: row.resource.name } : null,
     customer: row.customer ? { customerId: row.customer.customerId, fullName: row.customer.fullName, phone: row.customer.phone } : null,
-    plan: row.eventHallPlan ? mapPlan(contractedHallPlan(row, row.eventHallPlan)) : null,
+    plan: recordedPlan || row.eventHallPlan ? mapPlan(recordedPlan ?? row.eventHallPlan) : null,
     // Horas extra contratadas y lo que cuestan (0 si no hay).
     extraHours: Number(row.extraHours) || 0,
-    extraHoursCost: row.eventHallPlan ? extraHoursCost(contractedHallPlan(row, row.eventHallPlan), Number(row.extraHours) || 0) : 0,
+    extraHoursCost: recordedPlan || row.eventHallPlan ? extraHoursCost(recordedPlan ?? row.eventHallPlan, Number(row.extraHours) || 0) : 0,
   };
 }
 
@@ -265,13 +269,15 @@ async function listHallBookings({ page = 1, pageSize = 20 } = {}) {
     order: [['startDatetime', 'DESC'], ['bookingId', 'DESC']],
     limit: pageSize, offset: (page - 1) * pageSize,
   });
-  return { items: rows.map(mapHallBooking), page, pageSize, total: count, totalPages: Math.ceil(count / pageSize) };
+  const recordedPlans = await contractedHallPlans(rows);
+  return { items: rows.map((row) => mapHallBooking(row, recordedPlans.get(row.bookingId))), page, pageSize, total: count, totalPages: Math.ceil(count / pageSize) };
 }
 
 async function getHallBooking(bookingId, options = {}) {
   const booking = await Booking.findOne({ where: { bookingId }, include: hallBookingIncludes(), ...options });
   if (!booking) throw new DomainError('La reserva del salon indicada no existe.', 404);
-  const result = mapHallBooking(booking);
+  const recordedPlan = await contractedHallPlan(booking, booking.eventHallPlan, options.transaction);
+  const result = mapHallBooking(booking, recordedPlan);
   const plans = await EventHallPricingPlan.findAll({
     where: { resourceId: result.resource.resourceId }, order: [['planId', 'ASC']], ...options,
   });
@@ -296,7 +302,7 @@ async function updateHallBooking(bookingId, changes = {}) {
       where: { resourceId: booking.resourceId }, order: [['planId', 'ASC']],
       transaction, lock: transaction.LOCK.UPDATE,
     });
-    const previousPlan = contractedHallPlan(booking, plans.find((plan) => plan.planId === booking.eventHallPlanId));
+    const previousPlan = await contractedHallPlan(booking, plans.find((plan) => plan.planId === booking.eventHallPlanId), transaction);
     let nextPlan;
     if (changes.planId !== undefined) {
       nextPlan = plans.find((plan) => plan.planId === Number(changes.planId));
@@ -345,14 +351,16 @@ async function updateHallBooking(bookingId, changes = {}) {
     const fields = ['startDatetime', 'endDatetime'];
     if (nextPlan) {
       booking.eventHallPlanId = nextPlan.planId;
-      booking.hallPlanSnapshot = JSON.stringify(snapshotHallPlan(nextPlan));
-      fields.push('eventHallPlanId', 'hallPlanSnapshot');
+      fields.push('eventHallPlanId');
     }
     if (changes.extraHours !== undefined) {
       booking.extraHours = nextExtra;
       fields.push('extraHours');
     }
     await booking.save({ fields, transaction });
+    if (nextPlan) {
+      await recordContractedHallPlan({ bookingId: booking.bookingId, plan: nextPlan, transaction });
+    }
     const result = await getHallBooking(booking.bookingId, { transaction });
     // Importes requeridos, no pagos ni saldo financiero.
     return { ...result, ...(pricing && { pricing }) };

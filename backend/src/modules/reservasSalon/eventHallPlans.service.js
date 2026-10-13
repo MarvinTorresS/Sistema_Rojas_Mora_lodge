@@ -16,6 +16,7 @@ const {
   sequelize,
 } = require('../../models');
 const { DomainError } = require('../../utils/domainError.util');
+const { contractedHallPlans, recordContractedHallPlan } = require('./hallPlanSnapshot.util');
 const { ACTIVE_BOOKING_STATUSES } = require('../../utils/bookingOverlap.util');
 const {
   normalizePlanName,
@@ -81,6 +82,15 @@ async function updateHallPlan(planId, { planName, hours, price }, { userId = nul
     }
 
     const previousPlan = mapPlan(plan);
+    // Antes de editar, conservar las condiciones de reservas antiguas que
+    // todavia no tengan registro. No sobrescribir condiciones ya contratadas.
+    const bookings = await Booking.findAll({ where: { eventHallPlanId: plan.planId }, transaction });
+    const recordedPlans = await contractedHallPlans(bookings, transaction);
+    for (const booking of bookings) {
+      if (!recordedPlans.has(booking.bookingId)) {
+        await recordContractedHallPlan({ bookingId: booking.bookingId, plan, transaction, userId });
+      }
+    }
     await plan.update({ planName, hours, price }, { transaction });
     await AuditLog.create({
       userId, action: 'event_hall_plan_updated', entityType: 'event_hall_pricing_plan',
