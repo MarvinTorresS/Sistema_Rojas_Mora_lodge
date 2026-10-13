@@ -18,6 +18,7 @@ const MODULES = [
   { to: '/cabinas/check-in', label: 'Ingreso de huéspedes' },
   { to: '/cabinas/check-out', label: 'Salida de huéspedes' },
   { to: '/restaurante', label: 'Restaurante' },
+  { to: '/restaurante/mesas', label: 'Estado de las mesas' },
   { to: '/usuarios', label: 'Usuarios y roles' },
   { to: '/clientes', label: 'Clientes' },
   { to: '/facturacion', label: 'Facturación y pagos' },

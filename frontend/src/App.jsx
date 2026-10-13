@@ -22,6 +22,7 @@ import BuscarReservaCabina from './pages/BuscarReservaCabina.jsx';
 import AdminPlanesSalon from './pages/AdminPlanesSalon.jsx';
 import CheckInCabinas from './pages/CheckInCabinas.jsx';
 import CheckOutCabinas from './pages/CheckOutCabinas.jsx';
+import EstadoMesas from './pages/EstadoMesas.jsx';
 
 /**
  * Router principal de la aplicación.
@@ -75,6 +76,8 @@ function App() {
           {/* HU-018/HU-019 — buscar una reserva de cabina por huésped y modificarla. */}
           <Route path="cabinas/buscar" element={<BuscarReservaCabina />} />
           {/* Sprint 4 — Alison */}
+          {/* HU-023 (Wagner): estado de mesas, separado de otros flujos. */}
+          <Route path="restaurante/mesas" element={<EstadoMesas />} />
           <Route
             path="restaurante"
             element={<PantallaPendiente titulo="Restaurante" huRelacionadas="HU-023 a HU-031" />}
