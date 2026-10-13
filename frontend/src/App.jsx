@@ -24,6 +24,7 @@ import CheckInCabinas from './pages/CheckInCabinas.jsx';
 import CheckOutCabinas from './pages/CheckOutCabinas.jsx';
 import EstadoMesas from './pages/EstadoMesas.jsx';
 import TotalCuentaMesa from './pages/TotalCuentaMesa.jsx';
+import EditarProducto from './pages/EditarProducto.jsx';
 
 /**
  * Router principal de la aplicación.
@@ -80,6 +81,7 @@ function App() {
           {/* HU-023 (Wagner): estado de mesas, separado de otros flujos. */}
           <Route path="restaurante/mesas" element={<EstadoMesas />} />
           <Route path="restaurante/cuentas/total" element={<TotalCuentaMesa />} />
+          <Route path="restaurante/productos/editar" element={<EditarProducto />} />
           <Route
             path="restaurante"
             element={<PantallaPendiente titulo="Restaurante" huRelacionadas="HU-023 a HU-031" />}

@@ -59,6 +59,8 @@ app.use('/api/restaurant-tables', require('./modules/restaurante/tableStatus.rou
 app.use('/api/restaurant-tables', require('./modules/restaurante/tableReactivate.routes'));
 // HU-029 (Wagner): consulta de importes; no crea facturas ni cierra cuentas.
 app.use('/api/restaurant-accounts', require('./modules/restaurante/accountTotal.routes'));
+// HU-116 (Wagner): consultar y editar un producto existente.
+app.use('/api/restaurant-products', require('./modules/restaurante/productEdit.routes'));
 
 app.use(notFoundHandler);
 app.use(errorHandler);
