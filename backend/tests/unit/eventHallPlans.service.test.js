@@ -77,6 +77,7 @@ describe('mapPlan', () => {
     const plan = { planId: 1, resourceId: 2, planName: 'Oro', hours: 6, price: '300000.00' };
     expect(mapPlan(plan)).toEqual({
       planId: 1, resourceId: 2, planName: 'Oro', hours: 6, price: 300000,
+      includedServices: [], depositPercentage: null, extraHourPrice: null,
     });
   });
 
