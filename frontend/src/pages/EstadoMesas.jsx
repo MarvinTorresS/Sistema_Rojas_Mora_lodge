@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listTableStatuses } from '../services/tableStatusService';
+import { reactivateTable } from '../services/tableReactivateService';
 
 const STATES = {
   available: { label: 'Disponible', style: 'border-teal-200 bg-teal-50 text-teal-700' },
@@ -13,6 +14,18 @@ export default function EstadoMesas() {
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  async function reactivate(tableId) {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const response = await reactivateTable(tableId);
+      setNotice(response.message);
+      try { setResult(await listTableStatuses()); }
+      catch { setError('La mesa fue reactivada, pero no se pudo actualizar el panel. Presioná Actualizar para consultar su estado.'); }
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
 
   async function refresh() {
     setBusy(true); setError('');
@@ -38,6 +51,10 @@ export default function EstadoMesas() {
         <h3 className="text-xl font-semibold">Mesa {table.tableNumber}</h3>
         <p className="mt-1 text-sm">{table.seatCount} personas</p>
         <p className="mt-3 font-semibold">{state.label}</p>
+        <button onClick={() => reactivate(table.tableId)} disabled={busy || !table.isInactive}
+          aria-label={`Reactivar mesa ${table.tableNumber}`}
+          title={table.isInactive ? 'Volver a poner la mesa en servicio' : 'La mesa ya se encuentra activa'}
+          className="mt-4 rounded-lg border border-current px-3 py-2 text-sm disabled:opacity-50">Reactivar</button>
       </li>;
     })}</ul>;
   }
@@ -52,6 +69,7 @@ export default function EstadoMesas() {
     {error && <div role="alert" className="rounded-lg bg-coral-50 p-3 text-coral-700"><p>{error}</p>
       {result && <p>La información mostrada corresponde a la última consulta exitosa.</p>}</div>}
     {busy && <p role="status">Consultando el estado de las mesas…</p>}
+    {notice && <p role="status" className="rounded-lg bg-teal-50 p-3 text-teal-700">{notice}</p>}
     {result && <>
       <p className="text-sm text-muted">Última consulta: {new Date(result.meta.checkedAt).toLocaleTimeString('es-CR', { timeZone: 'America/Costa_Rica' })}</p>
       <ul aria-label="Resumen de mesas" className="flex flex-wrap gap-3 text-sm">{Object.entries(STATES).map(([key, state]) => <li key={key} className={`rounded-lg border px-3 py-2 ${state.style}`}>{state.label}: {result.meta.counts[key]}</li>)}</ul>

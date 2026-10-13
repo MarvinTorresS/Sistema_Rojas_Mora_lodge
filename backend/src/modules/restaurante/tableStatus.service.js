@@ -27,7 +27,7 @@ async function listTableStatuses({ now = new Date() } = {}) {
       if (table.status === 'inactive' || table.resource.status !== 'available' || blocked.has(table.resourceId)) status = 'unavailable';
       else if (table.status === 'occupied' || occupied.has(table.tableId)) status = 'occupied';
       else if (reserved.has(table.resourceId)) status = 'reserved';
-      return { tableId: table.tableId, tableNumber: table.tableNumber, seatCount: table.seatCount, status };
+      return { tableId: table.tableId, tableNumber: table.tableNumber, seatCount: table.seatCount, status, isInactive: table.status === 'inactive' };
     }).sort((a, b) => a.tableNumber.localeCompare(b.tableNumber, 'es', { numeric: true }) || a.tableId - b.tableId);
     const counts = { available: 0, occupied: 0, reserved: 0, unavailable: 0 };
     for (const item of items) counts[item.status] += 1;

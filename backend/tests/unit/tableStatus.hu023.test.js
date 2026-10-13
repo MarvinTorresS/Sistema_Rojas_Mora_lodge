@@ -24,7 +24,7 @@ test('CA-1 muestra disponible, ocupada y reservada sin datos de clientes', async
   models.Booking.findAll.mockResolvedValue([{ resourceId: 13 }]);
   const result = await listTableStatuses({ now });
   expect(result.items.map((t) => t.status)).toEqual(['available', 'occupied', 'reserved']);
-  expect(result.items[0]).toEqual({ tableId: 1, tableNumber: '1', seatCount: 4, status: 'available' });
+  expect(result.items[0]).toEqual({ tableId: 1, tableNumber: '1', seatCount: 4, status: 'available', isInactive: false });
   expect(result.counts).toEqual({ available: 1, occupied: 1, reserved: 1, unavailable: 0 });
   expect(result.message).toBeNull();
 });
