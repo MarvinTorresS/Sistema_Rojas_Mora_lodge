@@ -25,6 +25,8 @@ const { updateCabinBookingRules } = require('./cabinBookingUpdate.validator');
 const router = express.Router();
 const checkInController = require('./cabinCheckIn.controller');
 const { checkInRules } = require('./cabinCheckIn.validator');
+const checkOutController = require('./cabinCheckOut.controller');
+const { checkOutRules } = require('./cabinCheckOut.validator');
 
 // HU-016 (Marvin) — Disponibilidad de todas las cabinas para unas
 // fechas y un grupo. Va ANTES de las rutas con :bookingId para que
@@ -62,7 +64,8 @@ router.patch('/:bookingId', updateCabinBookingRules, updateController.updateBook
 router.post('/:bookingId/check-in', checkInRules, checkInController.checkIn);
 
 // HU-022 (Wagner) — Registrar la salida (check-out) del huesped.
-// TODO (Wagner, Sprint 3): POST /:bookingId/check-out
+// Autenticacion pendiente del Sprint 5; facturacion completa pendiente de HU-040.
+router.post('/:bookingId/check-out', checkOutRules, checkOutController.checkOut);
 
 // HU-127 (Marvin) — Gestionar la solicitud de extension de hospedaje.
 // Sus tres endpoints viven en cabinExtension.* (un archivo por capa) para
