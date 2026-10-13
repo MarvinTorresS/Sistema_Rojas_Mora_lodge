@@ -33,7 +33,9 @@ async function searchPlans(req, res, next) {
 // PUT /api/event-hall-plans/:planId — HU-011.
 async function updatePlan(req, res, next) {
   try {
-    const result = await eventHallPlansService.updateHallPlan(req.params.planId, req.body);
+    const result = await eventHallPlansService.updateHallPlan(req.params.planId, req.body, {
+      userId: req.user?.userId ?? null,
+    });
     return res.json({ data: result });
   } catch (error) {
     return next(error);

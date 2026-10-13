@@ -88,13 +88,13 @@ function AdminPlanesSalon() {
       });
 
       // CA-2: reservas futuras asociadas no bloquean la edición, solo se
-      // informa cuántas usarán los datos nuevos del plan.
+      // informa que las reservas conservan las condiciones contratadas.
       const note = futureBookingsCount > 0
-        ? ` Hay ${futureBookingsCount} reserva(s) futura(s) que ya usarán estos datos nuevos.`
+        ? ' Este plan tiene reservas futuras; el precio nuevo solo aplicará a solicitudes nuevas.'
         : '';
       setPlans((prev) => prev.map((p) => (p.planId === planId ? updatedPlan : p)));
       setEditingPlanId(null);
-      setSearchState({ status: 'idle', message: `Plan actualizado correctamente.${note}` });
+      setSearchState({ status: 'idle', message: `Plan actualizado exitosamente.${note}` });
     } catch (error) {
       setEditState({ status: 'error', message: error.message });
     }
@@ -175,6 +175,7 @@ function AdminPlanesSalon() {
                   onChange={(event) => setEditForm((prev) => ({ ...prev, planName: event.target.value }))}
                   className="rounded-lg border border-line px-3 py-2 text-sm focus:border-primary-400 focus:outline-none"
                   placeholder="Nombre del plan"
+                  aria-label="Nombre del plan"
                 />
                 <div className="flex gap-2">
                   <input
@@ -186,6 +187,7 @@ function AdminPlanesSalon() {
                     onChange={(event) => setEditForm((prev) => ({ ...prev, hours: event.target.value }))}
                     className="w-1/2 rounded-lg border border-line px-3 py-2 text-sm focus:border-primary-400 focus:outline-none"
                     placeholder="Horas"
+                    aria-label="Horas"
                   />
                   <input
                     type="number"
@@ -196,6 +198,7 @@ function AdminPlanesSalon() {
                     onChange={(event) => setEditForm((prev) => ({ ...prev, price: event.target.value }))}
                     className="w-1/2 rounded-lg border border-line px-3 py-2 text-sm focus:border-primary-400 focus:outline-none"
                     placeholder="Precio (₡)"
+                    aria-label="Precio"
                   />
                 </div>
                 {editState.status === 'error' && (

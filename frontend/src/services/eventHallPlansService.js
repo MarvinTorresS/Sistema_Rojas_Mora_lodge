@@ -45,7 +45,7 @@ export async function searchEventHallPlans(name) {
  * @param {{ planName: string, hours: number, price: number }} payload
  * @returns {Promise<{ plan: object, futureBookingsCount: number }>}
  *   `futureBookingsCount` > 0 (CA-2) no es un error: solo informa cuántas
- *   reservas ya confirmadas usarán los datos nuevos del plan.
+ *   reservas conservan las condiciones contratadas.
  */
 export async function updateEventHallPlan(planId, payload) {
   try {

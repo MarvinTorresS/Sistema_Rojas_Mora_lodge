@@ -129,7 +129,7 @@ describe('HU-014 CA-3 cambio de plan sin integracion financiera', () => {
     expect(result.body.data.plan.planId).toBe(2);
     expect(result.body.data.pricing).toEqual({ price: 250000, depositPercentage: 0.3, depositAmount: 75000, previousDepositAmount: 45000, depositDifference: 30000 });
     expect(booking).toMatchObject({ eventHallPlanId: 2, resourceId: 2, customerId: 4, status: 'active', originChannel: 'web', startDatetime: start, endDatetime: end });
-    expect(booking.save).toHaveBeenCalledWith({ fields: ['startDatetime', 'endDatetime', 'eventHallPlanId'], transaction: expect.any(Object) });
+    expect(booking.save).toHaveBeenCalledWith({ fields: ['startDatetime', 'endDatetime', 'eventHallPlanId', 'hallPlanSnapshot'], transaction: expect.any(Object) });
     expect(result.body.data).not.toHaveProperty('balance');
     expect(Customer.findOrCreate).not.toHaveBeenCalled();
   });

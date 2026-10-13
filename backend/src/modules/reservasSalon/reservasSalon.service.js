@@ -9,6 +9,7 @@ const {
   Booking, Resource, ResourceBlock, EventHallPricingPlan, Customer, sequelize,
 } = require('../../models');
 const { DomainError } = require('../../utils/domainError.util');
+const { snapshotHallPlan, contractedHallPlan } = require('./hallPlanSnapshot.util');
 const { buildBookingOverlapWhere, buildBlockOverlapWhere } = require('../../utils/bookingOverlap.util');
 const {
   assertExtraHours, parseExtraHours, extraHoursCost, totalPrice,
@@ -196,6 +197,7 @@ async function createHallBooking(payload) {
     customerId: customer.customerId,
     originChannel: 'staff',
     eventHallPlanId: plan.planId,
+    hallPlanSnapshot: JSON.stringify(snapshotHallPlan(plan)),
     startDatetime: start,
     endDatetime: end,
     extraHours: extra,
@@ -240,10 +242,10 @@ function mapHallBooking(booking) {
     status: row.status, originChannel: row.originChannel,
     resource: row.resource ? { resourceId: row.resource.resourceId, name: row.resource.name } : null,
     customer: row.customer ? { customerId: row.customer.customerId, fullName: row.customer.fullName, phone: row.customer.phone } : null,
-    plan: row.eventHallPlan ? mapPlan(row.eventHallPlan) : null,
+    plan: row.eventHallPlan ? mapPlan(contractedHallPlan(row, row.eventHallPlan)) : null,
     // Horas extra contratadas y lo que cuestan (0 si no hay).
     extraHours: Number(row.extraHours) || 0,
-    extraHoursCost: row.eventHallPlan ? extraHoursCost(row.eventHallPlan, Number(row.extraHours) || 0) : 0,
+    extraHoursCost: row.eventHallPlan ? extraHoursCost(contractedHallPlan(row, row.eventHallPlan), Number(row.extraHours) || 0) : 0,
   };
 }
 
@@ -288,13 +290,13 @@ async function updateHallBooking(bookingId, changes = {}) {
     if (booking.status === 'cancelled') throw new DomainError('Una reserva cancelada no puede modificarse.', 409);
     if (resource.status !== 'available') throw new DomainError('El salon no esta disponible actualmente.', 409);
     // Planes del salon (con bloqueo) para validar la cobertura de horas y
-    // calcular importes. Booking no conserva el precio historico: se usan los
-    // precios vigentes.
+    // calcular importes. HU-011 conserva las condiciones contratadas hasta
+    // que el usuario selecciona expresamente otro plan.
     const plans = await EventHallPricingPlan.findAll({
       where: { resourceId: booking.resourceId }, order: [['planId', 'ASC']],
       transaction, lock: transaction.LOCK.UPDATE,
     });
-    const previousPlan = plans.find((plan) => plan.planId === booking.eventHallPlanId);
+    const previousPlan = contractedHallPlan(booking, plans.find((plan) => plan.planId === booking.eventHallPlanId));
     let nextPlan;
     if (changes.planId !== undefined) {
       nextPlan = plans.find((plan) => plan.planId === Number(changes.planId));
@@ -343,7 +345,8 @@ async function updateHallBooking(bookingId, changes = {}) {
     const fields = ['startDatetime', 'endDatetime'];
     if (nextPlan) {
       booking.eventHallPlanId = nextPlan.planId;
-      fields.push('eventHallPlanId');
+      booking.hallPlanSnapshot = JSON.stringify(snapshotHallPlan(nextPlan));
+      fields.push('eventHallPlanId', 'hallPlanSnapshot');
     }
     if (changes.extraHours !== undefined) {
       booking.extraHours = nextExtra;

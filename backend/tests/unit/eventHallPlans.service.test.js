@@ -14,9 +14,11 @@
 jest.mock('../../src/models', () => ({
   EventHallPricingPlan: { findAll: jest.fn(), findByPk: jest.fn() },
   Booking: { count: jest.fn() },
+  AuditLog: { create: jest.fn() },
+  sequelize: { transaction: jest.fn(async (callback) => callback({ LOCK: { UPDATE: 'UPDATE' } })) },
 }));
 
-const { EventHallPricingPlan, Booking } = require('../../src/models');
+const { EventHallPricingPlan, Booking, AuditLog } = require('../../src/models');
 const {
   searchPlansByName, updateHallPlan, deleteHallPlan, mapPlan,
 } = require('../../src/modules/reservasSalon/eventHallPlans.service');
@@ -129,6 +131,23 @@ describe('searchPlansByName (HU-010)', () => {
 describe('updateHallPlan (HU-011)', () => {
   const payload = { planName: 'Plan Oro', hours: 6, price: 300000 };
 
+  it('registra el editor y las condiciones anteriores y nuevas en la misma transaccion', async () => {
+    EventHallPricingPlan.findByPk.mockResolvedValue(makePlanInstance());
+    Booking.count.mockResolvedValue(0);
+    await updateHallPlan(5, payload, { userId: 12 });
+    const [audit, options] = AuditLog.create.mock.calls[0];
+    expect(audit).toMatchObject({ userId: 12, entityId: 5, action: 'event_hall_plan_updated' });
+    expect(JSON.parse(audit.details)).toMatchObject({ previousPlan: { price: 150000 }, newPlan: { price: 300000 } });
+    expect(options.transaction).toBe(EventHallPricingPlan.findByPk.mock.calls[0][1].transaction);
+  });
+
+  it('propaga un fallo de auditoria para abortar la transaccion', async () => {
+    EventHallPricingPlan.findByPk.mockResolvedValue(makePlanInstance());
+    AuditLog.create.mockRejectedValueOnce(new Error('auditoria no disponible'));
+    await expect(updateHallPlan(5, payload)).rejects.toThrow('auditoria no disponible');
+    expect(Booking.count).not.toHaveBeenCalled();
+  });
+
   it('CP-011-01 edicion exitosa: actualiza el plan y no hay reservas futuras', async () => {
     const plan = makePlanInstance();
     EventHallPricingPlan.findByPk.mockResolvedValue(plan);
@@ -136,7 +155,7 @@ describe('updateHallPlan (HU-011)', () => {
 
     const result = await updateHallPlan(5, payload);
 
-    expect(plan.update).toHaveBeenCalledWith(payload);
+    expect(plan.update).toHaveBeenCalledWith(payload, expect.objectContaining({ transaction: expect.any(Object) }));
     expect(result.plan).toMatchObject(payload);
     expect(result.futureBookingsCount).toBe(0);
   });
