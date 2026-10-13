@@ -15,6 +15,7 @@ const MODULES = [
   { to: '/cancha', label: 'Cancha sintética' },
   { to: '/salon', label: 'Salón de eventos' },
   { to: '/cabinas', label: 'Cabinas' },
+  { to: '/cabinas/check-in', label: 'Ingreso de huéspedes' },
   { to: '/restaurante', label: 'Restaurante' },
   { to: '/usuarios', label: 'Usuarios y roles' },
   { to: '/clientes', label: 'Clientes' },
