@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import BuscarReservaCabina from './BuscarReservaCabina';
-import { listCabinRates, searchCabinBookings, updateCabinBooking } from '../services/reservasCabinaService';
+import ReservasCabina from './ReservasCabina';
+import { cancelCabinBooking, listCabinBookings, getCabinAvailability, listCabinRates, searchCabinBookings, updateCabinBooking } from '../services/reservasCabinaService';
 import { addDays, todayInHotel } from '../components/cabinas/cabinFormat';
 
 // El servicio se reemplaza completo: estas pruebas verifican la PANTALLA
 // (qué pide, qué muestra) sin levantar la API ni la base de datos.
 vi.mock('../services/reservasCabinaService', () => ({
+  cancelCabinBooking: vi.fn(), listCabinBookings: vi.fn(), getCabinAvailability: vi.fn(), createCabinBooking: vi.fn(),
   searchCabinBookings: vi.fn(), updateCabinBooking: vi.fn(), listCabinRates: vi.fn(),
 }));
 
@@ -71,6 +73,7 @@ describe('HU-018 buscar reserva por huésped', () => {
     fireEvent.change(screen.getByLabelText('Buscar huésped'), { target: { value: 'ana' } });
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(searchCabinBookings).not.toHaveBeenCalled();
+    expect(listCabinBookings).not.toHaveBeenCalled();
     expect(screen.getByText(/presioná Buscar/)).toBeTruthy();
   });
 
@@ -366,5 +369,154 @@ describe('HU-019 modificar reserva', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(screen.queryByRole('form', { name: 'Modificar reserva' })).toBeNull();
     expect(updateCabinBooking).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('HU-017 Ver reservas', () => {
+  function renderList() {
+    return render(<MemoryRouter><BuscarReservaCabina listMode /></MemoryRouter>);
+  }
+  const listResponse = (items = [ana], overrides = {}) => ({
+    data: items, meta: { page: 1, pageSize: 20, total: items.length, totalPages: items.length ? 1 : 0, message: null, ...overrides },
+  });
+
+  it('Ver reservas navega desde creación y consulta solamente al entrar al listado', async () => {
+    getCabinAvailability.mockReturnValue(new Promise(() => {}));
+    listCabinBookings.mockResolvedValue(listResponse());
+    render(<MemoryRouter initialEntries={['/cabinas']}><Routes>
+      <Route path="/cabinas" element={<ReservasCabina />} />
+      <Route path="/cabinas/reservas" element={<BuscarReservaCabina listMode />} />
+    </Routes></MemoryRouter>);
+    expect(listCabinBookings).not.toHaveBeenCalled();
+    expect(screen.getByRole('link', { name: 'Buscar reserva' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Ver reservas' }));
+    expect(await screen.findByText('Ana Mora')).toBeTruthy();
+    expect(listCabinBookings).toHaveBeenCalledWith({ page: 1 });
+    expect(searchCabinBookings).not.toHaveBeenCalled();
+    expect(screen.getByText(/#5/)).toBeTruthy();
+  });
+
+  it('muestra carga sin confundirla con lista vacía', () => {
+    listCabinBookings.mockReturnValue(new Promise(() => {}));
+    renderList();
+    expect(screen.getByLabelText('Listado de reservas').querySelector('[aria-busy="true"]')).toBeTruthy();
+    expect(screen.queryByText('No hay reservas de cabinas registradas')).toBeNull();
+  });
+
+  it('CA-2 muestra el estado vacío', async () => {
+    listCabinBookings.mockResolvedValue(listResponse([]));
+    renderList();
+    expect(await screen.findByText('No hay reservas de cabinas registradas')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('distingue errores y permite reintentar', async () => {
+    listCabinBookings.mockRejectedValueOnce(new Error('Sin conexión')).mockResolvedValueOnce(listResponse());
+    renderList();
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('Sin conexión'));
+    expect(screen.queryByText('No hay reservas de cabinas registradas')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('Ana Mora')).toBeTruthy();
+    expect(listCabinBookings).toHaveBeenCalledTimes(2);
+  });
+
+  it('pagina y permite volver de una página vacía sin afirmar que no hay reservas', async () => {
+    listCabinBookings.mockResolvedValueOnce(listResponse([ana], { total: 21, totalPages: 2 }))
+      .mockResolvedValueOnce(listResponse([], { page: 2, total: 1, totalPages: 1 }));
+    renderList();
+    await screen.findByText('Ana Mora');
+    fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
+    expect(await screen.findByText(/No hay reservas en esta página/)).toBeTruthy();
+    expect(listCabinBookings).toHaveBeenLastCalledWith({ page: 2 });
+    expect(screen.getByRole('button', { name: /Anterior/ }).disabled).toBe(false);
+  });
+
+  it('reutiliza ficha y edición y refresca el listado al guardar', async () => {
+    listCabinBookings.mockResolvedValue(listResponse());
+    updateCabinBooking.mockResolvedValue({
+      changed: true, changes: {}, booking: { bookingId: 5, status: 'active', partySize: 2 },
+      cabin: ana.cabin, guest: ana.guest,
+      stay: { ...ana.stay, checkOutDate: addDays(today, 15), nights: 5 },
+      amounts: { repriced: true, previousTotal: 105000, totalAmount: 175000 },
+    });
+    renderList();
+    fireEvent.click(await screen.findByRole('button', { name: /Ana Mora/ }));
+    expect(screen.getByText('88881111')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Modificar reserva/ }));
+    setField('Fecha de salida', addDays(today, 15));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(await screen.findByText('La reserva se modificó correctamente')).toBeTruthy();
+    await waitFor(() => expect(listCabinBookings).toHaveBeenCalledTimes(2));
+    expect(searchCabinBookings).not.toHaveBeenCalled();
+    expect(updateCabinBooking).toHaveBeenCalledWith(5, { checkOutDate: addDays(today, 15) });
+  });
+});
+
+
+describe('HU-020 cancelar reserva', () => {
+  const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
+  beforeEach(() => {
+    // jsdom no implementa showModal; el navegador sí gestiona foco e inert.
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function () { this.setAttribute('open', ''); } });
+  });
+  afterEach(() => {
+    if (originalShowModal) Object.defineProperty(HTMLDialogElement.prototype, 'showModal', originalShowModal);
+    else delete HTMLDialogElement.prototype.showModal;
+  });
+  async function select(booking = ana) {
+    renderPage();
+    await searchFor('a', [booking]);
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(booking.guest.fullName) }));
+  }
+  it('abrir y volver no cancelan', async () => {
+    await select();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar reserva' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/reserva #5/)).toBeTruthy();
+    expect(cancelCabinBooking).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Volver' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(cancelCabinBooking).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar reserva' }));
+    fireEvent(screen.getByRole('dialog'), new Event('cancel', { bubbles: true, cancelable: true }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(cancelCabinBooking).not.toHaveBeenCalled();
+  });
+  it('confirma una sola vez y actualiza lista y ficha', async () => {
+    let resolve;
+    cancelCabinBooking.mockReturnValue(new Promise((done) => { resolve = done; }));
+    await select();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar reserva' }));
+    const confirm = within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar cancelación' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(cancelCabinBooking).toHaveBeenCalledTimes(1);
+    expect(cancelCabinBooking).toHaveBeenCalledWith(5);
+    expect(confirm.disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Volver' }).disabled).toBe(true);
+    resolve({ booking: { bookingId: 5, status: 'cancelled' } });
+    expect(await screen.findByText('La reserva se canceló correctamente')).toBeTruthy();
+    expect(screen.getAllByText('Cancelada')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Cancelar reserva' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Modificar reserva/ })).toBeNull();
+  });
+  it('muestra rechazo por check-in concurrente sin alterar los datos', async () => {
+    cancelCabinBooking.mockRejectedValue(new Error('No se puede cancelar la reserva porque el huésped ya ingresó.'));
+    await select();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar reserva' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar cancelación' }));
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('ya ingresó'));
+    expect(screen.getAllByText('Reservada')).toHaveLength(2);
+  });
+  it.each(['checked_in', 'cancelled', 'completed', 'rejected'])('no permite cancelar %s', async (status) => {
+    await select({ ...ana, status, isModifiable: status === 'checked_in' });
+    expect(screen.queryByRole('button', { name: 'Cancelar reserva' })).toBeNull();
+    if (status === 'checked_in') expect(screen.getByText(/No se puede cancelar.*ya ingresó/)).toBeTruthy();
+    expect(cancelCabinBooking).not.toHaveBeenCalled();
+  });
+  it('pending permite cancelar aunque no sea editable', async () => {
+    await select({ ...ana, status: 'pending', isModifiable: false });
+    expect(screen.getByRole('button', { name: 'Cancelar reserva' })).toBeTruthy();
   });
 });

@@ -66,7 +66,8 @@ function App() {
           {/* HU-128 (Marvin) — tarifa por noche de las cabinas (rol Administrador). */}
           <Route path="cabinas/tarifas" element={<TarifasCabina />} />
           {/* HU-018/HU-019 — buscar una reserva de cabina por huésped y modificarla. */}
-          <Route path="cabinas/buscar" element={<BuscarReservaCabina />} />
+          <Route path="cabinas/buscar" element={<BuscarReservaCabina key="search" />} />
+          <Route path="cabinas/reservas" element={<BuscarReservaCabina key="list" listMode />} />
           {/* Sprint 4 — Alison */}
           <Route
             path="restaurante"

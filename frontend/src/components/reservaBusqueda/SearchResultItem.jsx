@@ -34,7 +34,7 @@ function SearchResultItem({ booking, isSelected, onSelect }) {
           {booking.guest.fullName}
         </span>
         <span className="truncate text-xs text-muted">
-          {booking.cabin.name} · {formatDayRange(booking.stay.checkInDate, booking.stay.checkOutDate)}
+          #{booking.bookingId} · {booking.cabin.name} · {formatDayRange(booking.stay.checkInDate, booking.stay.checkOutDate)}
         </span>
       </span>
       <span className={`shrink-0 rounded-full px-2 py-[3px] text-[11px] font-bold ${BADGE_TONES[badge.tone]}`}>

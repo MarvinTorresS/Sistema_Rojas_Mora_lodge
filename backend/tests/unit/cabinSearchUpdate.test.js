@@ -527,3 +527,65 @@ describe('cabinBookingUpdate.util y cabinSearch.util', () => {
     expect(searchUtil.escapeLike('a%b_c\\')).toBe('a\\%b\\_c\\\\');
   });
 });
+
+
+describe('HU-017 listado general de reservas', () => {
+  const row = (status, bookingId) => ({
+    bookingId, status, partySize: 2,
+    startDatetime: toHotelDatetime(checkIn, CHECK_IN_TIME),
+    endDatetime: toHotelDatetime(checkOut, CHECK_OUT_TIME),
+    resource: { resourceId: 3, name: 'Cabina 1', cabinDetail: details[3] },
+    customer: { customerId: 7, fullName: 'Ana Mora', phone: '88881111' },
+  });
+
+  it('lista todos los estados con huésped, fechas y montos históricos', async () => {
+    const statuses = ['pending', 'active', 'rejected', 'checked_in', 'completed', 'cancelled'];
+    Booking.findAndCountAll.mockResolvedValue({ rows: statuses.map(row), count: 6 });
+    AuditLog.findAll.mockResolvedValue([{ entityId: 0, details: '{"totalAmount":90000}' }]);
+    const response = await request(app).get(base).expect(200);
+    expect(response.body.data.map((item) => item.status)).toEqual(statuses);
+    expect(response.body.data[0]).toMatchObject({
+      bookingId: 0, guest: { fullName: 'Ana Mora' }, cabin: { name: 'Cabina 1' },
+      stay: { checkInDate: checkIn, checkOutDate: checkOut }, totalAmount: 90000, isTotalEstimated: false,
+    });
+    expect(response.body.meta).toMatchObject({ page: 1, pageSize: 20, total: 6, totalPages: 1 });
+    const options = Booking.findAndCountAll.mock.calls[0][0];
+    // El JOIN obligatorio excluye cancha y salón; no se filtran estados ni huéspedes.
+    expect(options.include[0]).toMatchObject({ required: true, where: { resourceType: 'cabin' } });
+    expect(options.where).toBeUndefined();
+    expect(options.include[1].where).toBeUndefined();
+  });
+
+  it('pagina con orden estable y distingue una página vacía del total vacío', async () => {
+    Booking.findAndCountAll.mockResolvedValue({ rows: [], count: 2 });
+    const response = await request(app).get(base).query({ page: 3, pageSize: 1 }).expect(200);
+    expect(Booking.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
+      limit: 1, offset: 2, distinct: true, order: [['startDatetime', 'DESC'], ['bookingId', 'DESC']],
+    }));
+    expect(response.body.meta).toMatchObject({ total: 2, totalPages: 2, message: null });
+  });
+
+  it('CA-2 devuelve 200 y lista vacía sin consultar importes', async () => {
+    Booking.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+    const response = await request(app).get(base).expect(200);
+    expect(response.body).toEqual({ data: [], meta: {
+      page: 1, pageSize: 20, total: 0, totalPages: 0, message: 'No hay reservas de cabinas registradas',
+    } });
+    expect(AuditLog.findAll).not.toHaveBeenCalled();
+  });
+
+  it.each(['page=0', 'page=-1', 'page=abc', 'page=1.5', 'page=1000001', 'pageSize=0', 'pageSize=51'])('rechaza %s', async (query) => {
+    await request(app).get(`${base}?${query}`).expect(422);
+    expect(Booking.findAndCountAll).not.toHaveBeenCalled();
+  });
+
+  it('un fallo de consulta es un error 500, no una lista vacía', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      Booking.findAndCountAll.mockRejectedValueOnce(new Error('Consulta fallida'));
+      const response = await request(app).get(base).expect(500);
+      expect(response.body.error.message).toBe('Consulta fallida');
+      expect(response.body.data).toBeUndefined();
+    } finally { log.mockRestore(); }
+  });
+});

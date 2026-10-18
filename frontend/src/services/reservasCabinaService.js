@@ -209,3 +209,23 @@ export async function updateCabinBooking(bookingId, changes) {
     throw toFriendlyError(error, error.response ? 'No se pudo modificar la reserva. Intentá de nuevo.' : CONNECTION_ERROR_MESSAGE);
   }
 }
+
+// HU-017: listado general; conserva la misma representación que la búsqueda.
+export async function listCabinBookings(params = {}) {
+  try {
+    const response = await api.get(BASE_PATH, { params });
+    return response.data;
+  } catch (error) {
+    throw toFriendlyError(error, error.response ? 'No se pudo cargar el listado de reservas.' : CONNECTION_ERROR_MESSAGE);
+  }
+}
+
+// HU-020: solamente cambia el estado de una reserva, previa confirmación.
+export async function cancelCabinBooking(bookingId) {
+  try {
+    const response = await api.post(`${BASE_PATH}/${bookingId}/cancel`);
+    return response.data.data;
+  } catch (error) {
+    throw toFriendlyError(error, error.response ? 'No se pudo cancelar la reserva.' : CONNECTION_ERROR_MESSAGE);
+  }
+}

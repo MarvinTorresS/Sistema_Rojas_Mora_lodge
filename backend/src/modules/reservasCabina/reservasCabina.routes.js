@@ -22,6 +22,12 @@ const { searchCabinBookingsRules } = require('./cabinSearch.validator');
 const updateController = require('./cabinBookingUpdate.controller');
 const { updateCabinBookingRules } = require('./cabinBookingUpdate.validator');
 
+const listController = require('./cabinList.controller');
+const { listCabinBookingsRules } = require('./cabinList.validator');
+
+const cancellationController = require('./cabinCancellation.controller');
+const { cancelCabinBookingRules } = require('./cabinCancellation.validator');
+
 const router = express.Router();
 
 // HU-016 (Marvin) — Disponibilidad de todas las cabinas para unas
@@ -40,7 +46,7 @@ router.get('/extendable', listExtendableRules, extensionController.listExtendabl
 router.post('/', createCabinBookingRules, controller.createBooking);
 
 // HU-017 (Kendall) — Consultar el listado de reservas de cabinas.
-// TODO (Kendall, Sprint 3): GET /
+router.get('/', listCabinBookingsRules, listController.listBookings);
 
 // HU-018 — Buscar una reserva de cabina por huesped (nombre o
 // identificacion, coincidencia parcial). Query: ?q=&page=&pageSize=
@@ -53,7 +59,7 @@ router.get('/search', searchCabinBookingsRules, searchController.searchBookings)
 router.patch('/:bookingId', updateCabinBookingRules, updateController.updateBooking);
 
 // HU-020 (Kendall) — Cancelar una reserva de cabina existente.
-// TODO (Kendall, Sprint 3): POST /:bookingId/cancel
+router.post('/:bookingId/cancel', cancelCabinBookingRules, cancellationController.cancelBooking);
 
 // HU-021 (Wagner) — Registrar el ingreso (check-in) del huesped.
 // TODO (Wagner, Sprint 3): POST /:bookingId/check-in

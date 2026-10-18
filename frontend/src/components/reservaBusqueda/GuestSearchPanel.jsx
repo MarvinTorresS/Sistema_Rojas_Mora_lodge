@@ -19,7 +19,7 @@ function SkeletonRow() {
  * (se intentó buscar sin escribir nada).
  */
 function GuestSearchPanel({
-  term, onTermChange, onSearch, status, message, bookings, meta, selectedId, onSelect, onRetry, onPage,
+  listMode = false, term, onTermChange, onSearch, status, message, bookings, meta, selectedId, onSelect, onRetry, onPage,
 }) {
   const isFirstLoad = status === 'loading' && bookings.length === 0;
   const isEmpty = status === 'success' && bookings.length === 0;
@@ -27,10 +27,10 @@ function GuestSearchPanel({
 
   return (
     <aside
-      aria-label="Resultados de la búsqueda"
+      aria-label={listMode ? 'Listado de reservas' : 'Resultados de la búsqueda'}
       className="flex min-w-0 flex-col gap-3 rounded-2xl border border-line bg-white p-4 shadow-card"
     >
-      <form onSubmit={onSearch} role="search" className="flex max-w-2xl flex-col gap-2">
+      {!listMode && <form onSubmit={onSearch} role="search" className="flex max-w-2xl flex-col gap-2">
         <label htmlFor="booking-search" className="text-xs font-semibold text-muted">Buscar huésped</label>
         <div className="flex gap-2">
           <div className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-[10px] border border-faint bg-surface px-3 focus-within:border-primary-600 focus-within:ring-2 focus-within:ring-primary-200">
@@ -49,7 +49,7 @@ function GuestSearchPanel({
             Buscar
           </button>
         </div>
-      </form>
+      </form>}
 
       {showProblem && (
         <div role="alert" className="flex items-center gap-2 rounded-xl border border-coral-400 bg-coral-50 px-3 py-2.5 text-[13px] text-coral-600">
@@ -67,7 +67,7 @@ function GuestSearchPanel({
         aria-busy={status === 'loading'}
         className={`flex flex-col gap-2 transition-opacity duration-300 ${status === 'loading' && !isFirstLoad ? 'opacity-60' : 'opacity-100'}`}
       >
-        {status === 'idle' && (
+        {!listMode && status === 'idle' && (
           <p className="rounded-xl bg-surface px-3 py-4 text-center text-[13px] text-muted">
             Escribí el nombre o la cédula del huésped y presioná Buscar.
           </p>
@@ -101,12 +101,14 @@ function GuestSearchPanel({
         {/* HU-018 CA-2: el criterio escrito se mantiene en el campo. */}
         {isEmpty && (
           <p role="status" className="rounded-xl bg-surface px-3 py-4 text-center text-[13px] text-muted">
-            {meta?.message || MESSAGES.NO_RESULTS}
+            {listMode
+              ? (meta?.total === 0 ? 'No hay reservas de cabinas registradas' : 'No hay reservas en esta página. Volvé a la página anterior.')
+              : (meta?.message || MESSAGES.NO_RESULTS)}
           </p>
         )}
       </div>
 
-      {meta && meta.totalPages > 1 && (
+      {meta && (meta.totalPages > 1 || meta.page > 1) && (
         <nav aria-label="Páginas de resultados" className="flex items-center justify-between gap-2 text-[13px] text-muted">
           <button
             type="button" onClick={() => onPage(meta.page - 1)} disabled={meta.page <= 1 || status === 'loading'}
