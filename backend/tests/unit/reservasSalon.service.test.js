@@ -1,6 +1,7 @@
 'use strict';
 
 jest.mock('../../src/models', () => ({
+  AuditLog: { create: jest.fn(), findAll: jest.fn(async () => []) },
   Booking: { findAndCountAll: jest.fn(), findOne: jest.fn(), findByPk: jest.fn(), create: jest.fn() },
   Resource: { findOne: jest.fn() },
   Customer: { findOrCreate: jest.fn() },

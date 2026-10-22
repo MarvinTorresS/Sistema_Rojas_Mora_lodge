@@ -47,9 +47,6 @@ function failWith(getError) {
     return true;
   };
 }
-  }
-  return next();
-}
 
 // HU-010 (GET /api/event-hall-plans/search?name=...): buscar por
 // nombre. `name` es obligatorio porque sin el no hay busqueda que

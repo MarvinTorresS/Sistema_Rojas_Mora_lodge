@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { createFieldBooking, listFieldBookings, searchFieldBookings, filterFieldBookingsByStatus, updateFieldBooking, cancelFieldBooking } from '../services/reservasCanchaService';
 import DisponibilidadGrid from '../components/DisponibilidadGrid';
+import ListadoReservasCancha from '../components/ListadoReservasCancha';
 
 /**
  * Página del módulo "Cancha sintética" (HU-001 a HU-006).
@@ -241,6 +242,7 @@ export function canConfirmCancellation(reason) {
 function ReservasCancha() {
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [reservas, setReservas] = useState(RESERVAS_INICIALES);
+  const [listRefreshVersion, setListRefreshVersion] = useState(0);
   // feedback agrupa estado + mensaje en un solo objeto porque siempre
   // cambian juntos (nunca hay un mensaje de error "idle", ni un estado
   // 'error' sin mensaje) — separarlos en dos variables sueltas
@@ -334,6 +336,7 @@ function ReservasCancha() {
       setEditingBooking(null);
       setCancelStep(null);
       setCancelForm({ reason: '', isAdmin: false });
+      setListRefreshVersion((value) => value + 1);
       // Mismos refrescos que hace HU-005 al guardar una edicion, para
       // que la reserva cancelada desaparezca/actualice en las 3 vistas.
       await Promise.all([
@@ -388,6 +391,7 @@ function ReservasCancha() {
       });
       setEditingBooking(null);
       setEditForm({ startDatetime: '', endDatetime: '' });
+      setListRefreshVersion((value) => value + 1);
       // Conserva la fecha del panel diario y los criterios actuales. Si la
       // reserva cambia de dia o deja de coincidir, desaparece de esa vista.
       await Promise.all([
@@ -570,6 +574,7 @@ function ReservasCancha() {
       setFormData((prev) => ({ ...INITIAL_FORM, date: prev.date }));
       setFeedback({ status: 'success', message: 'Reserva registrada correctamente.' });
       await loadReservas();
+      setListRefreshVersion((value) => value + 1);
     } catch (error) {
       // error.message ya viene traducido por reservasCanchaService.js
       // a partir de los criterios de aceptación CA-2 a CA-5 (conflicto
@@ -627,6 +632,16 @@ function ReservasCancha() {
             Abierta de 1:00 p.m. a 9:00 p.m. · tarifa ₡8.000 por hora
           </p>
         </div>
+
+        <ListadoReservasCancha refreshVersion={listRefreshVersion} onRegister={() => {
+          setEditingBooking(null);
+          setCancelStep(null);
+          requestAnimationFrame(() => {
+            const input = document.getElementById('customerName');
+            input?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            input?.focus({ preventScroll: true });
+          });
+        }} />
 
         <section aria-labelledby="search-title" className="shrink-0 rounded-xl border border-line bg-surface p-4 shadow-card">
           <h3 id="search-title" className="font-display text-base font-semibold text-primary-900">Buscar reservas</h3>

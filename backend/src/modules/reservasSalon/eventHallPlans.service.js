@@ -12,9 +12,11 @@ const {
   Resource,
   EventHallPricingPlan,
   Booking,
+  AuditLog,
   sequelize,
 } = require('../../models');
 const { DomainError } = require('../../utils/domainError.util');
+const { contractedHallPlans, recordContractedHallPlan } = require('./hallPlanSnapshot.util');
 const { ACTIVE_BOOKING_STATUSES } = require('../../utils/bookingOverlap.util');
 const {
   normalizePlanName,
@@ -72,23 +74,41 @@ async function searchPlansByName({ name }) {
   return plans.map(mapPlan);
 }
 
-async function updateHallPlan(planId, { planName, hours, price }) {
-  const plan = await EventHallPricingPlan.findByPk(planId);
-  if (!plan) {
-    throw new DomainError('El plan de precios indicado no existe.', 404);
-  }
+async function updateHallPlan(planId, { planName, hours, price }, { userId = null } = {}) {
+  return sequelize.transaction(async (transaction) => {
+    const plan = await EventHallPricingPlan.findByPk(planId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!plan) {
+      throw new DomainError('El plan de precios indicado no existe.', 404);
+    }
 
-  await plan.update({ planName, hours, price });
+    const previousPlan = mapPlan(plan);
+    // Antes de editar, conservar las condiciones de reservas antiguas que
+    // todavia no tengan registro. No sobrescribir condiciones ya contratadas.
+    const bookings = await Booking.findAll({ where: { eventHallPlanId: plan.planId }, transaction });
+    const recordedPlans = await contractedHallPlans(bookings, transaction);
+    for (const booking of bookings) {
+      if (!recordedPlans.has(booking.bookingId)) {
+        await recordContractedHallPlan({ bookingId: booking.bookingId, plan, transaction, userId });
+      }
+    }
+    await plan.update({ planName, hours, price }, { transaction });
+    await AuditLog.create({
+      userId, action: 'event_hall_plan_updated', entityType: 'event_hall_pricing_plan',
+      entityId: plan.planId,
+      details: JSON.stringify({ previousPlan, newPlan: mapPlan(plan) }),
+    }, { transaction });
 
-  const futureBookingsCount = await Booking.count({
-    where: {
-      eventHallPlanId: plan.planId,
-      status: { [Op.in]: ACTIVE_BOOKING_STATUSES },
-      startDatetime: { [Op.gt]: new Date() },
-    },
+    const futureBookingsCount = await Booking.count({
+      where: {
+        eventHallPlanId: plan.planId,
+        status: { [Op.in]: ACTIVE_BOOKING_STATUSES },
+        startDatetime: { [Op.gt]: new Date() },
+      },
+      transaction,
+    });
+
+    return { plan: mapPlan(plan), futureBookingsCount };
   });
-
-  return { plan: mapPlan(plan), futureBookingsCount };
 }
 
 async function deleteHallPlan(planId) {
@@ -239,5 +259,4 @@ module.exports = {
   deleteHallPlan,
   listEventHallPlans,
   createEventHallPlan,
-};
 };
