@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, RotateCw, Search, Tag, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, List, RotateCw, Search, Tag, TriangleAlert } from 'lucide-react';
 import { createCabinBooking, getCabinAvailability } from '../services/reservasCabinaService';
 import StayBar from '../components/cabinas/StayBar.jsx';
 import CabinCard from '../components/cabinas/CabinCard.jsx';
@@ -291,6 +291,13 @@ function ReservasCabina() {
           <p className="text-sm text-muted">Registrá la estadía con los datos del huésped.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/cabinas/reservas"
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-[10px] border border-line bg-white px-4 text-sm font-semibold text-primary-800 shadow-card transition-colors hover:border-primary-400 hover:bg-primary-50"
+          >
+            <List size={16} aria-hidden="true" />
+            Ver reservas
+          </Link>
           {/* HU-018/HU-019: buscar una reserva por huésped y
               modificarla, en su propia pantalla. */}
           <Link

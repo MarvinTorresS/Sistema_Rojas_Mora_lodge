@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Pencil } from 'lucide-react';
-import { listCabinRates, searchCabinBookings, updateCabinBooking } from '../services/reservasCabinaService';
+import { cancelCabinBooking, listCabinBookings, listCabinRates, searchCabinBookings, updateCabinBooking } from '../services/reservasCabinaService';
 import { formatColones, todayInHotel } from '../components/cabinas/cabinFormat';
 import Notice from '../components/common/Notice.jsx';
 import GuestSearchPanel from '../components/reservaBusqueda/GuestSearchPanel.jsx';
+import CancelBookingDialog from '../components/reservaBusqueda/CancelBookingDialog.jsx';
 import BookingSheet from '../components/reservaBusqueda/BookingSheet.jsx';
 import BookingEditForm from '../components/reservaBusqueda/BookingEditForm.jsx';
 import ConflictSuggestions from '../components/reservaBusqueda/ConflictSuggestions.jsx';
@@ -40,14 +41,16 @@ import {
 
 const IDLE_RESULT = { status: 'idle', items: [], meta: null, message: '' };
 
-function BuscarReservaCabina() {
+// HU-017 se activa por navegación explícita a /cabinas/reservas. Las rutas
+// usan claves distintas para reiniciar selección y consultas al cambiar de flujo.
+function BuscarReservaCabina({ listMode = false }) {
   // --- Búsqueda (HU-018) --------------------------------------------------
   // `term` es lo que hay escrito; `request` es lo que se pidió al presionar
   // Buscar. Se separan para que escribir NO dispare consultas (CA-1: la
   // búsqueda ocurre al presionar Buscar o Enter) y para poder repetir la
   // misma búsqueda (después de guardar) creando un `request` nuevo.
   const [term, setTerm] = useState('');
-  const [request, setRequest] = useState(null);
+  const [request, setRequest] = useState(() => (listMode ? { page: 1 } : null));
   const [result, setResult] = useState(IDLE_RESULT);
 
   // --- Ficha y modificación (HU-019) ------------------------------------
@@ -63,6 +66,12 @@ function BuscarReservaCabina() {
   const [saved, setSaved] = useState(null); // CA-1
   const [cabins, setCabins] = useState([]);
 
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelError, setCancelError] = useState('');
+  const [cancelSuccess, setCancelSuccess] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const cancelInFlight = useRef(false);
+
   const detailRef = useRef(null);
   const today = todayInHotel();
 
@@ -72,7 +81,10 @@ function BuscarReservaCabina() {
     if (!request) return undefined;
     let cancelled = false;
     setResult((previous) => ({ ...previous, status: 'loading', message: '' }));
-    searchCabinBookings({ q: request.term, page: request.page })
+    const query = listMode
+      ? listCabinBookings({ page: request.page })
+      : searchCabinBookings({ q: request.term, page: request.page });
+    query
       .then(({ data, meta }) => {
         if (cancelled) return;
         setResult({ status: 'success', items: data, meta, message: '' });
@@ -83,7 +95,7 @@ function BuscarReservaCabina() {
         if (!cancelled) setResult({ status: 'error', items: [], meta: null, message: error.message });
       });
     return () => { cancelled = true; };
-  }, [request]);
+  }, [request, listMode]);
 
   // En pantallas angostas la ficha queda DEBAJO de la lista; al elegir una
   // reserva se lleva a la vista (mismo criterio que Extender hospedaje).
@@ -133,6 +145,8 @@ function BuscarReservaCabina() {
   }
 
   function handleSelect(booking) {
+    if (cancelInFlight.current) return;
+    setCancelSuccess(false);
     setSelected(booking);
     setSaved(null);
     resetEditing();
@@ -230,6 +244,28 @@ function BuscarReservaCabina() {
     }
   }
 
+  async function handleConfirmCancellation() {
+    if (!cancelTarget || cancelInFlight.current) return;
+    cancelInFlight.current = true;
+    setIsCancelling(true);
+    setCancelError('');
+    try {
+      const { booking } = await cancelCabinBooking(cancelTarget.bookingId);
+      const applyStatus = (item) => item?.bookingId === booking.bookingId
+        ? { ...item, status: booking.status, isModifiable: false } : item;
+      setSelected(applyStatus);
+      setResult((previous) => ({ ...previous, items: previous.items.map(applyStatus) }));
+      setSaved(null);
+      setCancelSuccess(true);
+      setCancelTarget(null);
+    } catch (error) {
+      setCancelError(error.message);
+    } finally {
+      cancelInFlight.current = false;
+      setIsCancelling(false);
+    }
+  }
+
   // --- Render ------------------------------------------------------------
   const changeRows = useMemo(
     () => (editing && draft ? describeChanges(selected, draft, cabins) : []),
@@ -244,12 +280,13 @@ function BuscarReservaCabina() {
           <ArrowLeft size={15} />
           Volver a reservas de cabina
         </Link>
-        <h2 className="mt-3 font-display text-2xl font-semibold text-primary-900">Buscar reserva</h2>
-        <p className="text-sm text-muted">Ubicá la reserva de un huésped por nombre o cédula y, si hace falta, modificala.</p>
+        <h2 className="mt-3 font-display text-2xl font-semibold text-primary-900">{listMode ? 'Reservas de cabinas' : 'Buscar reserva'}</h2>
+        <p className="text-sm text-muted">{listMode ? 'Consultá las reservas registradas y seleccioná una para ver sus detalles.' : 'Ubicá la reserva de un huésped por nombre o cédula y, si hace falta, modificala.'}</p>
       </div>
 
       <div className="flex flex-col gap-4">
         <GuestSearchPanel
+          listMode={listMode}
           term={term} onTermChange={setTerm} onSearch={handleSearch}
           status={result.status} message={result.message} bookings={result.items} meta={result.meta}
           selectedId={selectedId} onSelect={handleSelect} onRetry={handleRetry} onPage={handlePage}
@@ -264,6 +301,19 @@ function BuscarReservaCabina() {
             className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-line bg-white shadow-card"
           >
             <BookingSheet booking={selected} />
+            {cancelSuccess && <div className="p-5"><Notice tone="success" title="La reserva se canceló correctamente" /></div>}
+            {!editing && selected.status === 'checked_in' && (
+              <div className="p-5"><Notice tone="info" title="No se puede cancelar la reserva porque el huésped ya ingresó." /></div>
+            )}
+            {!editing && ['pending', 'active'].includes(selected.status) && (
+              <div className="flex justify-end px-5 py-3">
+                <button type="button" disabled={isCancelling || result.status === 'loading'}
+                  onClick={() => { setCancelError(''); setCancelTarget(selected); }}
+                  className="rounded-lg border border-coral-400 px-4 py-3 text-sm font-semibold text-coral-600 disabled:opacity-50">
+                  Cancelar reserva
+                </button>
+              </div>
+            )}
 
             {/* HU-019 CA-1: reserva modificada. */}
             {saved && !editing && (
@@ -293,7 +343,7 @@ function BuscarReservaCabina() {
             {!editing && selected.isModifiable && (
               <div className="flex justify-end border-t border-line bg-surface px-[22px] py-3.5">
                 <button
-                  type="button" onClick={handleStartEdit}
+                  type="button" disabled={isCancelling} onClick={handleStartEdit}
                   className="inline-flex min-h-[46px] items-center gap-2 rounded-[10px] bg-primary-800 px-[22px] text-sm font-bold text-white transition-colors hover:bg-primary-700"
                 >
                   <Pencil size={15} aria-hidden="true" />
@@ -323,6 +373,8 @@ function BuscarReservaCabina() {
           </section>
         )}
       </div>
+      {cancelTarget && <CancelBookingDialog booking={cancelTarget} busy={isCancelling} error={cancelError}
+        onClose={() => { if (!cancelInFlight.current) setCancelTarget(null); }} onConfirm={handleConfirmCancellation} />}
     </div>
   );
 }
