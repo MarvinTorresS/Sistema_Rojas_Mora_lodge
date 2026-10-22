@@ -18,7 +18,7 @@ import {
  * agregar acá un botón "ver todos" que llame a ese endpoint.
  *
  * Convención del equipo: página propia en pages/, ruta propia en
- * App.jsx (/salon/planes), sin tocar las rutas de nadie más.
+ * App.jsx (/salon/planes/administrar), conservando el catálogo existente.
  */
 
 const currencyFormatter = new Intl.NumberFormat('es-CR', {
@@ -120,11 +120,11 @@ function AdminPlanesSalon() {
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
       <div>
         <Link
-          to="/salon"
+          to="/salon/planes"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink"
         >
           <ArrowLeft size={15} />
-          Volver a reservas del salón
+          Volver al catálogo de planes
         </Link>
         <h2 className="mt-3 font-display text-2xl font-semibold text-primary-900">
           Planes de precio del salón

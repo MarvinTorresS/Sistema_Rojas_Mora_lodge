@@ -162,6 +162,10 @@ function PlanesSalon() {
           <h2 className="mt-3 font-display text-2xl font-semibold text-primary-900">Planes de precios del salón</h2>
           <p className="text-sm text-muted">Consultá las opciones tarifarias o registrá un plan nuevo.</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/salon/planes/administrar" className="inline-flex min-h-[44px] items-center rounded-[10px] border border-line bg-white px-4 text-sm font-semibold text-primary-800">
+            Buscar, editar o eliminar planes
+          </Link>
         {!formOpen && (
           <button
             type="button" onClick={openForm}
@@ -171,6 +175,7 @@ function PlanesSalon() {
             Nuevo plan
           </button>
         )}
+        </div>
       </div>
 
       {createdPlan && (

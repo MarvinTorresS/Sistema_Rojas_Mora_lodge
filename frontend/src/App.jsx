@@ -55,13 +55,10 @@ function App() {
           {/* Sprint 2 — Marvin (HU-007, HU-013) y Kendall (HU-014/HU-015):
               flujo de disponibilidad + registro de reserva del salón. */}
           <Route path="salon" element={<ReservasSalon />} />
-          {/* Sprint 2 — CRUD de planes de precio del salón (HU-008 a
-              HU-012). El comentario anterior asumía que esto entraba en
-              la misma pantalla de arriba, pero ReservasSalon.jsx solo
-              cubre el flujo de RESERVA (con una lista de planes fija,
-              ver TODO de HU-009 ahí); administrar los planes en sí
-              (buscar/editar/eliminar) necesita su propia pantalla. */}
-          <Route path="salon/planes" element={<AdminPlanesSalon />} />
+          {/* Preservar el catálogo y ?plan=<id> de HU-008/HU-009.
+              HU-010/HU-011/HU-012 tienen su propio acceso enlazado. */}
+          <Route path="salon/planes" element={<PlanesSalon />} />
+          <Route path="salon/planes/administrar" element={<AdminPlanesSalon />} />
           {/* Sprint 3 — Marvin (HU-016, registro). HU-017 a HU-022 y HU-127
               se suman a esta misma página: no hace falta un
               PantallaPendiente aparte por HU. */}
