@@ -4,7 +4,8 @@ jest.mock('../../src/models', () => ({
   AuditLog: { create: jest.fn(), findAll: jest.fn() },
   Booking: { create: jest.fn(), findOne: jest.fn(), findByPk: jest.fn(), findAndCountAll: jest.fn() },
   Resource: { findOne: jest.fn() }, ResourceBlock: { findOne: jest.fn() },
-  Customer: { findOrCreate: jest.fn() },
+  // Telefono nuevo por defecto (findAll vacio): el cliente se crea.
+  Customer: { findAll: jest.fn(async () => []), create: jest.fn() },
   EventHallPricingPlan: { findOne: jest.fn(), findAll: jest.fn() },
   sequelize: { transaction: jest.fn(async (fn) => fn({ LOCK: { UPDATE: 'UPDATE' } })) },
 }));
@@ -33,7 +34,7 @@ beforeEach(() => {
   });
   models.Resource.findOne.mockResolvedValue({ resourceId: 2, status: 'available' });
   models.ResourceBlock.findOne.mockResolvedValue(null);
-  models.Customer.findOrCreate.mockResolvedValue([{ customerId: 3 }]);
+  models.Customer.create.mockResolvedValue({ customerId: 3 });
   models.EventHallPricingPlan.findOne.mockResolvedValue(plan);
   models.EventHallPricingPlan.findAll.mockResolvedValue([plan]);
   models.Booking.create.mockImplementation(async (data) => ({ bookingId: 7, ...data }));

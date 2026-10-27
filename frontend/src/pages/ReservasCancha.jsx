@@ -4,6 +4,8 @@ import { ArrowLeft } from 'lucide-react';
 import { createFieldBooking, listFieldBookings, searchFieldBookings, filterFieldBookingsByStatus, updateFieldBooking, cancelFieldBooking } from '../services/reservasCanchaService';
 import DisponibilidadGrid from '../components/DisponibilidadGrid';
 import ListadoReservasCancha from '../components/ListadoReservasCancha';
+import CustomerPhoneConflict from '../components/common/CustomerPhoneConflict';
+import { useCustomerPhoneConflict } from '../hooks/useCustomerPhoneConflict';
 
 /**
  * Página del módulo "Cancha sintética" (HU-001 a HU-006).
@@ -248,6 +250,8 @@ function ReservasCancha() {
   // 'error' sin mensaje) — separarlos en dos variables sueltas
   // permitiría estados inconsistentes a mitad de una actualización.
   const [feedback, setFeedback] = useState({ status: 'idle', message: '' });
+  // Aviso "este teléfono ya es de otra persona" (compartido con salón).
+  const { conflict: phoneConflict, captureConflict, clearConflict } = useCustomerPhoneConflict();
   // Estado de la carga del listado (HU-002), separado del feedback del
   // formulario: leer y crear son dos operaciones distintas y pueden
   // estar en estados diferentes a la vez.
@@ -531,6 +535,9 @@ function ReservasCancha() {
 
   function handleChange(event) {
     const { name, value } = event.target;
+    // Si cambian el nombre o el teléfono, el aviso de teléfono ya
+    // registrado deja de aplicar: se vuelve a revisar al enviar.
+    if (name === 'customerName' || name === 'customerPhone') clearConflict();
     setFormData((prev) => ({
       ...prev,
       [name]: value,
@@ -546,8 +553,17 @@ function ReservasCancha() {
     setFormData((prev) => ({ ...prev, selectedHour: hour }));
   }
 
-  async function handleSubmit(event) {
+  function handleSubmit(event) {
     event.preventDefault();
+    submitBooking();
+  }
+
+  // Envía la reserva. `resolution` es la respuesta del recepcionista al
+  // aviso de teléfono ya registrado (vacía en el primer intento):
+  //   { linkCustomerId, customerLabel } -> "es ese cliente"
+  //   { confirmNewCustomer: true }      -> "es otra persona"
+  async function submitBooking(resolution = {}) {
+    const { customerLabel, ...customerChoice } = resolution;
 
     if (formData.selectedHour === null) {
       setFeedback({ status: 'error', message: 'Elegí un horario disponible en la cuadrícula.' });
@@ -564,6 +580,7 @@ function ReservasCancha() {
         customerPhone: formData.customerPhone,
         startDatetime,
         endDatetime,
+        ...customerChoice,
       });
 
       // La reserva ya quedó en el backend. En vez de agregarla a mano a
@@ -572,7 +589,15 @@ function ReservasCancha() {
       // el listado del día, para que la nueva reserva aparezca en la
       // grilla tal como la devuelve HU-002.
       setFormData((prev) => ({ ...INITIAL_FORM, date: prev.date }));
-      setFeedback({ status: 'success', message: 'Reserva registrada correctamente.' });
+      clearConflict();
+      // Si se eligió un cliente existente, se dice a nombre de quién quedó
+      // (puede ser distinto de lo que se había escrito).
+      setFeedback({
+        status: 'success',
+        message: customerLabel
+          ? `Reserva registrada a nombre de ${customerLabel}.`
+          : 'Reserva registrada correctamente.',
+      });
       await loadReservas();
       setListRefreshVersion((value) => value + 1);
     } catch (error) {
@@ -580,6 +605,12 @@ function ReservasCancha() {
       // a partir de los criterios de aceptación CA-2 a CA-5 (conflicto
       // de horario, demasiada anticipación, etc.) — no hace falta
       // interpretar códigos HTTP acá.
+      // Excepción: el teléfono es de otra persona. No es un error del
+      // formulario sino una pregunta, y se muestra con su propio aviso.
+      if (captureConflict(error, formData.customerName.trim())) {
+        setFeedback({ status: 'idle', message: '' });
+        return;
+      }
       setFeedback({ status: 'error', message: error.message });
     }
   }
@@ -589,6 +620,7 @@ function ReservasCancha() {
   function handleCancel() {
     setFormData(INITIAL_FORM);
     setFeedback({ status: 'idle', message: '' });
+    clearConflict();
   }
 
   const isSubmitting = feedback.status === 'loading';
@@ -609,28 +641,95 @@ function ReservasCancha() {
     // abajo, ese bloque ahora reclama TODO el alto disponible del
     // <main> (que si ocupa la pantalla completa, ver Layout.jsx) y se
     // lo reparte con la grilla, en vez de quedar flotando arriba.
-    <div className="flex min-h-full w-full flex-col gap-6 p-6 lg:flex-row">
+    <div className="flex min-h-full w-full flex-col gap-6 p-6 lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[auto_1fr]">
+      {/* Encabezado a todo lo ancho: asi "Nueva reserva" (columna derecha)
+          arranca a la misma altura que el primer cuadro de la columna
+          izquierda, en vez de subir hasta el nivel del boton "Volver". */}
+      <div className="lg:col-span-2">
+        {/* Vuelve a "Elegir espacio" (SeleccionarEspacio.jsx en
+            /reservar), no al dashboard: es la pantalla anterior real
+            en el flujo de "Registrar reserva" (ver App.jsx). Antes
+            esta página no tenía forma de regresar salvo con el botón
+            "atrás" del navegador. */}
+        <Link
+          to="/reservar"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink"
+        >
+          <ArrowLeft size={15} />
+          Volver a elegir espacio
+        </Link>
+        <h2 className="mt-3 font-display text-2xl font-semibold text-primary-900">
+          Cancha sintética
+        </h2>
+        <p className="text-sm text-muted">
+          Abierta de 1:00 p.m. a 9:00 p.m. · tarifa ₡8.000 por hora
+        </p>
+      </div>
+
       {/* Panel principal: lista del día + grilla de disponibilidad */}
       <div className="flex min-w-0 flex-[3] flex-col gap-6">
-        <div>
-          {/* Vuelve a "Elegir espacio" (SeleccionarEspacio.jsx en
-              /reservar), no al dashboard: es la pantalla anterior real
-              en el flujo de "Registrar reserva" (ver App.jsx). Antes
-              esta página no tenía forma de regresar salvo con el botón
-              "atrás" del navegador. */}
-          <Link
-            to="/reservar"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink"
-          >
-            <ArrowLeft size={15} />
-            Volver a elegir espacio
-          </Link>
-          <h2 className="mt-3 font-display text-2xl font-semibold text-primary-900">
-            Cancha sintética
-          </h2>
-          <p className="text-sm text-muted">
-            Abierta de 1:00 p.m. a 9:00 p.m. · tarifa ₡8.000 por hora
-          </p>
+        <div className="flex min-h-[420px] flex-1 flex-col gap-4 lg:flex-row">
+          {/* Lista lateral "Reservas del día" — resumen en texto de lo
+              mismo que ya se ve pintado en la grilla, para quien
+              prefiera leer una lista en vez de escanear colores.
+              Antes tenía un ancho fijo angosto (lg:w-56); ahora usa
+              una proporción del espacio disponible (flex-1 de 4, la
+              grilla flex-[3]) para que crezca junto con la pantalla en
+              vez de dejar hueco a su lado. overflow-y-auto: si algún
+              día hay muchas reservas en un día, esta lista scrollea en
+              vez de estirar la tarjeta más que la grilla de al lado. */}
+          <aside className="w-full shrink-0 overflow-y-auto rounded-xl border border-line bg-surface p-4 shadow-card lg:w-auto lg:flex-1">
+            <h3 className="font-display text-sm font-semibold text-primary-900">
+              Reservas del día
+            </h3>
+            <p className="text-xs text-muted">{formatDateHeader(formData.date)}</p>
+
+            {listState.status === 'loading' && (
+              <p className="mt-3 text-xs text-faint">Cargando reservas…</p>
+            )}
+
+            {listState.status === 'error' && (
+              <p className="mt-3 rounded-lg bg-coral-50 px-3 py-2 text-xs text-coral-600">
+                {listState.message}
+              </p>
+            )}
+
+            {listState.status === 'idle' && (
+              <ul className="mt-3 space-y-3">
+                {slots
+                  .filter((s) => s.status === 'occupied' || s.status === 'pending')
+                  .map((s) => (
+                    <li key={s.hour} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
+                      <p className="text-sm font-medium text-ink">{s.clientName}</p>
+                      <p className="text-xs text-faint">{s.hourLabel}</p>
+                      <span
+                        className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          s.status === 'occupied' ? 'bg-primary-50 text-primary-800' : 'bg-amber-50 text-amber-600'
+                        }`}
+                      >
+                        {s.status === 'occupied' ? 'Confirmada' : 'Pendiente'}
+                      </span>
+                    </li>
+                  ))}
+                {slots.every((s) => s.status !== 'occupied' && s.status !== 'pending') && (
+                  <li className="text-xs text-faint">Sin reservas registradas para este día.</li>
+                )}
+              </ul>
+            )}
+          </aside>
+
+          {/* flex + h-full: DisponibilidadGrid ahora se estira para
+              llenar el alto disponible de este bloque (ver comentario
+              arriba), no solo el ancho — así el fondo con la foto real
+              cubre el espacio real de la pantalla en vez de quedar
+              como una franja angosta con vacío debajo. */}
+          <div className="flex min-w-0 flex-[3] flex-col">
+            <DisponibilidadGrid
+              slots={slots}
+              onSelectSlot={handleSelectSlot}
+              selectedHour={formData.selectedHour}
+            />
+          </div>
         </div>
 
         <ListadoReservasCancha refreshVersion={listRefreshVersion} onRegister={() => {
@@ -643,6 +742,8 @@ function ReservasCancha() {
           });
         }} />
 
+        {/* Buscar reservas va debajo de la grilla: los horarios de la
+            cancha quedan visibles sin hacer scroll. */}
         <section aria-labelledby="search-title" className="shrink-0 rounded-xl border border-line bg-surface p-4 shadow-card">
           <h3 id="search-title" className="font-display text-base font-semibold text-primary-900">Buscar reservas</h3>
           <p className="mt-1 text-xs text-muted">Combiná cliente, teléfono exacto, fecha de inicio o estado. Incluye reservas históricas.</p>
@@ -781,70 +882,6 @@ function ReservasCancha() {
         </section>
 
         {/* fin Buscar reservas + filtro por estado, ver dentro del form de arriba */}
-
-        <div className="flex min-h-[420px] flex-1 flex-col gap-4 lg:flex-row">
-          {/* Lista lateral "Reservas del día" — resumen en texto de lo
-              mismo que ya se ve pintado en la grilla, para quien
-              prefiera leer una lista en vez de escanear colores.
-              Antes tenía un ancho fijo angosto (lg:w-56); ahora usa
-              una proporción del espacio disponible (flex-1 de 4, la
-              grilla flex-[3]) para que crezca junto con la pantalla en
-              vez de dejar hueco a su lado. overflow-y-auto: si algún
-              día hay muchas reservas en un día, esta lista scrollea en
-              vez de estirar la tarjeta más que la grilla de al lado. */}
-          <aside className="w-full shrink-0 overflow-y-auto rounded-xl border border-line bg-surface p-4 shadow-card lg:w-auto lg:flex-1">
-            <h3 className="font-display text-sm font-semibold text-primary-900">
-              Reservas del día
-            </h3>
-            <p className="text-xs text-muted">{formatDateHeader(formData.date)}</p>
-
-            {listState.status === 'loading' && (
-              <p className="mt-3 text-xs text-faint">Cargando reservas…</p>
-            )}
-
-            {listState.status === 'error' && (
-              <p className="mt-3 rounded-lg bg-coral-50 px-3 py-2 text-xs text-coral-600">
-                {listState.message}
-              </p>
-            )}
-
-            {listState.status === 'idle' && (
-              <ul className="mt-3 space-y-3">
-                {slots
-                  .filter((s) => s.status === 'occupied' || s.status === 'pending')
-                  .map((s) => (
-                    <li key={s.hour} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
-                      <p className="text-sm font-medium text-ink">{s.clientName}</p>
-                      <p className="text-xs text-faint">{s.hourLabel}</p>
-                      <span
-                        className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          s.status === 'occupied' ? 'bg-primary-50 text-primary-800' : 'bg-amber-50 text-amber-600'
-                        }`}
-                      >
-                        {s.status === 'occupied' ? 'Confirmada' : 'Pendiente'}
-                      </span>
-                    </li>
-                  ))}
-                {slots.every((s) => s.status !== 'occupied' && s.status !== 'pending') && (
-                  <li className="text-xs text-faint">Sin reservas registradas para este día.</li>
-                )}
-              </ul>
-            )}
-          </aside>
-
-          {/* flex + h-full: DisponibilidadGrid ahora se estira para
-              llenar el alto disponible de este bloque (ver comentario
-              arriba), no solo el ancho — así el fondo con la foto real
-              cubre el espacio real de la pantalla en vez de quedar
-              como una franja angosta con vacío debajo. */}
-          <div className="flex min-w-0 flex-[3] flex-col">
-            <DisponibilidadGrid
-              slots={slots}
-              onSelectSlot={handleSelectSlot}
-              selectedHour={formData.selectedHour}
-            />
-          </div>
-        </div>
       </div>
 
       {/* Panel lateral — formulario real de HU-001, reubicado como
@@ -1029,6 +1066,16 @@ function ReservasCancha() {
                 : 'Elegí una celda disponible en la cuadrícula →'}
             </p>
           </div>
+
+          <CustomerPhoneConflict
+            conflict={phoneConflict}
+            disabled={isSubmitting}
+            onUseExisting={(customer) => submitBooking({
+              linkCustomerId: customer.customerId,
+              customerLabel: customer.fullName,
+            })}
+            onRegisterNew={() => submitBooking({ confirmNewCustomer: true })}
+          />
 
           {feedback.status === 'error' && (
             <p className="rounded-lg bg-coral-50 px-3 py-2 text-xs text-coral-600">

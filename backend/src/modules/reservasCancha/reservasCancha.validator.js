@@ -13,6 +13,8 @@
 // porque para responderlas hace falta consultar la base de datos, y el
 // validator no deberia hacer eso.
 const { body, param, query, validationResult } = require('express-validator');
+const { normalizePhone } = require('../../utils/guestData.util');
+const { customerResolutionRules } = require('../../utils/customerResolutionRules.util');
 
 // Estados de reserva validos para el filtro opcional de HU-002. Misma
 // lista que el ENUM de booking.model.js; se repite aqui (y no se importa
@@ -54,7 +56,12 @@ const createBookingRules = [
   body('customerPhone')
     .exists({ checkFalsy: true }).withMessage('El telefono del cliente es obligatorio.')
     .isString().trim().isLength({ min: 8, max: 20 })
-    .withMessage('El telefono del cliente no es valido.'),
+    .withMessage('El telefono del cliente no es valido.')
+    // Se guarda y se BUSCA siempre con los 8 digitos ("8888-7777" ->
+    // "88887777"), igual que en salon. Sin esto, el mismo numero escrito
+    // con y sin guion contaba como dos telefonos distintos y el aviso de
+    // telefono ya registrado (CUSTOMER_PHONE_CONFLICT) nunca saltaba.
+    .customSanitizer((value) => normalizePhone(value) ?? value),
 
   body('startDatetime')
     .exists({ checkFalsy: true }).withMessage('La fecha y hora de inicio son obligatorias.')
@@ -63,6 +70,9 @@ const createBookingRules = [
   body('endDatetime')
     .exists({ checkFalsy: true }).withMessage('La fecha y hora de fin son obligatorias.')
     .isISO8601().withMessage('endDatetime debe ser una fecha valida (formato ISO 8601).'),
+
+  // Respuesta del recepcionista al aviso de telefono ya registrado.
+  ...customerResolutionRules,
 
   handleValidationErrors,
 ];

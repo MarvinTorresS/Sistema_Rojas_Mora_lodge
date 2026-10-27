@@ -4,7 +4,8 @@ jest.mock('../../src/models', () => ({
   AuditLog: { create: jest.fn(), findAll: jest.fn(async () => []) },
   Booking: { findAndCountAll: jest.fn(), findOne: jest.fn(), findByPk: jest.fn(), create: jest.fn() },
   Resource: { findOne: jest.fn() },
-  Customer: { findOrCreate: jest.fn() },
+  // Telefono nuevo por defecto (findAll vacio): el cliente se crea.
+  Customer: { findAll: jest.fn(async () => []), create: jest.fn() },
   EventHallPricingPlan: { findOne: jest.fn(), findAll: jest.fn() },
   ResourceBlock: { findOne: jest.fn() },
   sequelize: { transaction: jest.fn(async (callback) => callback({ LOCK: { UPDATE: 'UPDATE' } })) },
@@ -78,7 +79,7 @@ describe('HU-014 modificar fechas', () => {
     expect(result.body.data.endDatetime).toBe(newEnd);
     expect(booking).toMatchObject({ resourceId: 2, customerId: 4, eventHallPlanId: 1, status: 'active', originChannel: 'web', startDatetime: start });
     expect(booking.save).toHaveBeenCalledWith({ fields: ['startDatetime', 'endDatetime'], transaction: expect.any(Object) });
-    expect(Customer.findOrCreate).not.toHaveBeenCalled();
+    expect(Customer.create).not.toHaveBeenCalled();
   });
   it('excluye la propia reserva y usa limites de solapamiento estrictos', async () => {
     expect((await request(app).patch(`${base}/8`).send({ startDatetime: start.toISOString(), endDatetime: end.toISOString() })).status).toBe(200);
@@ -132,7 +133,7 @@ describe('HU-014 CA-3 cambio de plan sin integracion financiera', () => {
     expect(booking).toMatchObject({ eventHallPlanId: 2, resourceId: 2, customerId: 4, status: 'active', originChannel: 'web', startDatetime: start, endDatetime: end });
     expect(booking.save).toHaveBeenCalledWith({ fields: ['startDatetime', 'endDatetime', 'eventHallPlanId'], transaction: expect.any(Object) });
     expect(result.body.data).not.toHaveProperty('balance');
-    expect(Customer.findOrCreate).not.toHaveBeenCalled();
+    expect(Customer.create).not.toHaveBeenCalled();
   });
   it.each([99, 3])('rechaza plan inexistente o de otro salon (%s)', async (planId) => {
     const catalog = [...plans, { planId: 3, resourceId: 9, price: '300000.00' }];
@@ -235,7 +236,7 @@ describe('regresion HU-007 y HU-013', () => {
   });
   it('mantiene creacion y calculo de anticipo', async () => {
     EventHallPricingPlan.findOne.mockResolvedValue({ planId: 1, planName: 'Medio dia', hours: 6, price: 150000 });
-    Customer.findOrCreate.mockResolvedValue([{ customerId: 4 }]);
+    Customer.create.mockResolvedValue({ customerId: 4 });
     Booking.create.mockResolvedValue({ bookingId: 9 });
     const result = await request(app).post(base).send({ resourceId: 2, planId: 1, customerName: 'Kendall', customerPhone: '88888888', startDatetime: start.toISOString(), endDatetime: end.toISOString() });
     expect(result.status).toBe(201);

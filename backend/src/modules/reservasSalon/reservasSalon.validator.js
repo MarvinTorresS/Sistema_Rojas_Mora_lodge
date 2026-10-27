@@ -14,6 +14,7 @@
 // nunca reglas de negocio (eso es del service).
 const { body, param, query, validationResult } = require('express-validator');
 const { GUEST_MESSAGES, normalizePhone, isValidName } = require('../../utils/guestData.util');
+const { customerResolutionRules } = require('../../utils/customerResolutionRules.util');
 
 // NOTA (duplicado intencional, no un descuido): esta misma funcion ya
 // existe en reservasCancha.validator.js. Es identica y 100% generica
@@ -94,6 +95,9 @@ const createHallBookingRules = [
   body('extraHours')
     .optional({ nullable: true })
     .isInt({ min: 0, max: 24 }).withMessage('Las horas extra deben ser un número entero entre 0 y 24.'),
+
+  // Respuesta del recepcionista al aviso de telefono ya registrado.
+  ...customerResolutionRules,
 
   handleValidationErrors,
 ];

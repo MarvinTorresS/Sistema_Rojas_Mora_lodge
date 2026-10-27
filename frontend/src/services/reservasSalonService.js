@@ -40,12 +40,17 @@ export async function updateHallBooking(bookingId, changes) {
 
 function toFriendlyError(error, fallbackMessage) {
   const backendError = error.response?.data?.error;
-  const friendlyError = new Error(
-    backendError?.details?.map((detail) => detail.message).join(' ') ||
-    backendError?.message || fallbackMessage,
-  );
+  // `details` es una LISTA de campos en los 422 del validator, pero un
+  // OBJETO en algunos 409 (ej. CUSTOMER_PHONE_CONFLICT trae los clientes
+  // existentes). Solo se arma el texto desde la lista; si no, `.map` sobre
+  // un objeto lanzaría TypeError y se perdería el error real.
+  const fieldMessages = Array.isArray(backendError?.details)
+    ? backendError.details.map((detail) => detail.message).join(' ')
+    : '';
+  const friendlyError = new Error(fieldMessages || backendError?.message || fallbackMessage);
   friendlyError.details = backendError?.details;
   friendlyError.status = error.response?.status;
+  friendlyError.code = backendError?.code;
   return friendlyError;
 }
 

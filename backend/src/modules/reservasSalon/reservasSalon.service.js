@@ -11,6 +11,7 @@ const {
 const { DomainError } = require('../../utils/domainError.util');
 const { contractedHallPlan, contractedHallPlans, recordContractedHallPlan } = require('./hallPlanSnapshot.util');
 const { buildBookingOverlapWhere, buildBlockOverlapWhere } = require('../../utils/bookingOverlap.util');
+const { matchCustomerByPhone, createCustomer } = require('../../services/customerResolution.service');
 const {
   assertExtraHours, parseExtraHours, extraHoursCost, totalPrice,
 } = require('./reservasSalon.extraHours.util');
@@ -110,18 +111,6 @@ async function checkHallAvailability({ resourceId, startDatetime, endDatetime })
   return { available: true, reason: null };
 }
 
-// Busca (o crea) el Customer a partir de nombre + telefono. Misma
-// logica que reservasCancha.service.js#findOrCreateCustomer (ver nota
-// de duplicacion en reservasSalon.validator.js: candidata a extraerse
-// junto con handleValidationErrors en una limpieza futura).
-async function findOrCreateCustomer({ customerName, customerPhone }) {
-  const [customer] = await Customer.findOrCreate({
-    where: { phone: customerPhone },
-    defaults: { fullName: customerName, phone: customerPhone },
-  });
-  return customer;
-}
-
 // HU-013 — Registrar la reserva del salon con el plan de precios
 // seleccionado.
 async function createHallBooking(payload) {
@@ -131,6 +120,7 @@ async function createHallBooking(payload) {
 async function createHallBookingInTransaction(payload, transaction) {
   const {
     resourceId, planId, customerName, customerPhone, startDatetime, endDatetime, extraHours,
+    linkCustomerId, confirmNewCustomer,
   } = payload;
 
   const start = new Date(startDatetime);
@@ -192,7 +182,14 @@ async function createHallBookingInTransaction(payload, transaction) {
     throw new DomainError(`El salon esta bloqueado en ese horario (${overlappingBlock.reason}).`, 409);
   }
 
-  const customer = await findOrCreateCustomer({ customerName, customerPhone });
+  // Cliente de la reserva (compartido con cancha, ver
+  // services/customerResolution.service.js). Si el telefono ya es de OTRA
+  // persona, se corta con un 409 CUSTOMER_PHONE_CONFLICT para que el
+  // recepcionista elija. Ambos pasos van DENTRO de la transaccion: si
+  // crear la reserva falla, el cliente nuevo tambien se deshace.
+  const customer = (await matchCustomerByPhone({
+    customerName, customerPhone, linkCustomerId, confirmNewCustomer, transaction,
+  })) ?? (await createCustomer({ customerName, customerPhone, transaction }));
 
   // CA-1: registro exitoso. originChannel = 'staff', igual que HU-001:
   // "Como un Administrador o Recepcionista..." -> la reserva nace activa.

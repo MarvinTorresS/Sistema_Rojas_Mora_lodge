@@ -55,7 +55,10 @@ export async function searchFieldBookings(params = {}) {
  * @returns {Promise<object>} la reserva creada (tal como la devuelve el backend)
  * @throws {Error} con `.message` ya listo para mostrarle al usuario y
  *   `.details` (opcional) con la lista de campos inválidos, cuando el
- *   backend respondió 422 con detalle de validación (CA-3).
+ *   backend respondió 422 con detalle de validación (CA-3). Si el teléfono
+ *   ya es de otra persona trae `.code = 'CUSTOMER_PHONE_CONFLICT'` y
+ *   `.details.existingCustomers`; se reintenta con `linkCustomerId` o
+ *   `confirmNewCustomer: true` en el payload.
  */
 export async function createFieldBooking(payload) {
   try {
@@ -73,6 +76,9 @@ export async function createFieldBooking(payload) {
     );
     friendlyError.details = backendError?.details;
     friendlyError.status = error.response?.status;
+    // `code` permite reaccionar a un caso concreto sin comparar textos;
+    // por ejemplo CUSTOMER_PHONE_CONFLICT (teléfono de otra persona).
+    friendlyError.code = backendError?.code;
     throw friendlyError;
   }
 }

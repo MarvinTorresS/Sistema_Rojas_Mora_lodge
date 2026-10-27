@@ -10,6 +10,7 @@ const { Op } = require('sequelize');
 const { Booking, Resource, ResourceBlock, Customer, AuditLog, sequelize } = require('../../models');
 const { DomainError } = require('../../utils/domainError.util');
 const { buildBookingOverlapWhere, buildBlockOverlapWhere } = require('../../utils/bookingOverlap.util');
+const { matchCustomerByPhone, createCustomer } = require('../../services/customerResolution.service');
 
 // CA-4 "Reserva con demasiada anticipacion": limite de dias hacia el
 // futuro para poder registrar una reserva. Definido como constante (no
@@ -51,18 +52,21 @@ const BOOKING_STATUSES = ['pending', 'active', 'rejected', 'checked_in', 'comple
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-// Busca (o crea) el Customer a partir de los datos sueltos que manda el
-// formulario (nombre + telefono). El personal de recepcion no siempre
-// tiene de antemano el customerId: HU-001 dice "registrar una reserva
-// nueva", no "elegir un cliente ya existente". Se busca primero por
-// telefono (mas estable que el nombre) para no duplicar clientes que ya
-// existen en el sistema.
-async function findOrCreateCustomer({ customerName, customerPhone }) {
-  const [customer] = await Customer.findOrCreate({
-    where: { phone: customerPhone },
-    defaults: { fullName: customerName, phone: customerPhone },
+// CA-5 (HU-001) / HU-005: ¿el cliente ya tiene, en ESTA cancha, otra
+// reserva que se cruza con el horario pedido?
+//
+// El filtro por resourceId es a proposito: la regla evita que un mismo
+// cliente duplique su reserva de la cancha (doble clic, olvido), NO que
+// tenga actividades en espacios distintos a la vez. Un organizador puede
+// reservar el salon y la cancha para el mismo evento, y un huesped
+// hospedado en una cabana (reserva de varios dias) debe poder jugar.
+// Sin este filtro, cualquier reserva de salon o cabana bloqueaba la cancha.
+async function hasCustomerOverlapOnResource({ customerId, resourceId, start, end, excludeBookingId, transaction }) {
+  const overlappingBooking = await Booking.findOne({
+    where: { customerId, resourceId, ...buildBookingOverlapWhere({ start, end, excludeBookingId }) },
+    transaction,
   });
-  return customer;
+  return Boolean(overlappingBooking);
 }
 
 // HU-001 — Registrar una nueva reserva de cancha sintetica.
@@ -70,7 +74,9 @@ async function findOrCreateCustomer({ customerName, customerPhone }) {
 // antes de crear el registro (CA-1). CA-3 ya se resolvio en la capa de
 // validator.
 async function createFieldBooking(payload) {
-  const { resourceId, customerName, customerPhone, startDatetime, endDatetime } = payload;
+  const {
+    resourceId, customerName, customerPhone, startDatetime, endDatetime, linkCustomerId, confirmNewCustomer,
+  } = payload;
 
   const start = new Date(startDatetime);
   const end = new Date(endDatetime);
@@ -106,6 +112,26 @@ async function createFieldBooking(payload) {
     );
   }
 
+  // CA-5: Reserva duplicada del MISMO cliente en ESTA cancha.
+  // Va ANTES que el conflicto general (CA-2) a proposito: si el horario
+  // choca con una reserva del propio cliente, el mensaje correcto es
+  // "este cliente ya tiene una reserva", no "horario ocupado". Asi cada
+  // criterio se distingue: CA-5 = mismo cliente, CA-2 = otro cliente.
+  // Se busca al cliente SIN crearlo todavia: si la reserva se rechaza,
+  // no debe quedar un cliente nuevo guardado por un intento fallido.
+  // Si el telefono ya es de OTRA persona, aqui se corta con un 409
+  // CUSTOMER_PHONE_CONFLICT para que el recepcionista elija (ver
+  // services/customerResolution.service.js).
+  const existingCustomer = await matchCustomerByPhone({
+    customerName, customerPhone, linkCustomerId, confirmNewCustomer,
+  });
+  if (
+    existingCustomer &&
+    (await hasCustomerOverlapOnResource({ customerId: existingCustomer.customerId, resourceId, start, end }))
+  ) {
+    throw new DomainError('Este cliente ya tiene otra reserva que se cruza con ese horario.', 409);
+  }
+
   // CA-2: Conflicto de horario — contra otras reservas activas de ESTE
   // recurso y contra bloqueos vigentes (mantenimiento, uso interno).
   const overlappingBooking = await Booking.findOne({
@@ -122,17 +148,9 @@ async function createFieldBooking(payload) {
     throw new DomainError(`La cancha esta bloqueada en ese horario (${overlappingBlock.reason}).`, 409);
   }
 
-  const customer = await findOrCreateCustomer({ customerName, customerPhone });
-
-  // CA-5: Reserva superpuesta del MISMO cliente, sin importar el
-  // recurso (no puede estar, a la vez, jugando en la cancha y con otra
-  // reserva que se cruce en el tiempo).
-  const overlappingForCustomer = await Booking.findOne({
-    where: { customerId: customer.customerId, ...buildBookingOverlapWhere({ start, end }) },
-  });
-  if (overlappingForCustomer) {
-    throw new DomainError('Este cliente ya tiene otra reserva que se cruza con ese horario.', 409);
-  }
+  // Si el cliente no existia, recien ahora (con la reserva ya validada)
+  // se crea.
+  const customer = existingCustomer ?? (await createCustomer({ customerName, customerPhone }));
 
   // CA-1: Registro exitoso. originChannel = 'staff' porque HU-001 es
   // "Como un Administrador o Recepcionista..." (ver matriz): la reserva
@@ -354,6 +372,18 @@ async function updateFieldBooking(bookingId, changes = {}) {
     if (start < new Date() || start > maxDate) {
       throw new DomainError('El inicio debe ser futuro y estar dentro de los proximos 30 dias.', 422);
     }
+    // Mismo criterio que al crear (CA-5): solo cuenta otra reserva del
+    // cliente EN ESTA cancha, y se revisa antes del conflicto general.
+    if (await hasCustomerOverlapOnResource({
+      customerId: booking.customerId,
+      resourceId: booking.resourceId,
+      start,
+      end,
+      excludeBookingId: booking.bookingId,
+      transaction,
+    })) {
+      throw new DomainError('Este cliente ya tiene otra reserva que se cruza con ese horario.', 409);
+    }
     const overlap = buildBookingOverlapWhere({ start, end, excludeBookingId: booking.bookingId });
     if (await Booking.findOne({ where: { ...overlap, resourceId: booking.resourceId }, transaction })) {
       throw new DomainError('Ya existe una reserva en ese horario para esta cancha.', 409);
@@ -362,9 +392,6 @@ async function updateFieldBooking(bookingId, changes = {}) {
       where: { resourceId: booking.resourceId, ...buildBlockOverlapWhere({ start, end }) },
       transaction,
     })) throw new DomainError('La cancha esta bloqueada en ese horario.', 409);
-    if (await Booking.findOne({ where: { ...overlap, customerId: booking.customerId }, transaction })) {
-      throw new DomainError('Este cliente ya tiene otra reserva que se cruza con ese horario.', 409);
-    }
     booking.startDatetime = start;
     booking.endDatetime = end;
     await booking.save({ fields: ['startDatetime', 'endDatetime'], transaction });

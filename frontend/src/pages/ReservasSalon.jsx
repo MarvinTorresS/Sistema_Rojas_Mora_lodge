@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, ListChecks } from 'lucide-react';
 import { checkHallAvailability, createHallBooking, listHallBookings, getHallBooking, updateHallBooking, cancelHallBooking } from '../services/reservasSalonService';
+import CustomerPhoneConflict from '../components/common/CustomerPhoneConflict';
+import { useCustomerPhoneConflict } from '../hooks/useCustomerPhoneConflict';
 import { listEventHallPlans } from '../services/planesSalonService';
 import useEnterTransition from '../hooks/useEnterTransition';
 import {
@@ -574,6 +576,8 @@ function ReservasSalon() {
   const [availability, setAvailability] = useState({ status: 'idle', available: null, reason: null, message: '' });
   const [bookingForm, setBookingForm] = useState(INITIAL_BOOKING_FORM);
   const [bookingFeedback, setBookingFeedback] = useState({ status: 'idle', message: '' });
+  // Aviso "este teléfono ya es de otra persona" (compartido con cancha).
+  const { conflict: phoneConflict, captureConflict, clearConflict } = useCustomerPhoneConflict();
   const [confirmation, setConfirmation] = useState(null);
   // Se activa al intentar reservar con algo incompleto: desde ahi los avisos
   // se muestran y se van quitando solos conforme se completa cada campo.
@@ -650,12 +654,22 @@ function ReservasSalon() {
 
   function handleBookingFormChange(event) {
     const { name, value } = event.target;
+    // Cambiar nombre o teléfono invalida el aviso de teléfono ya registrado.
+    if (name === 'customerName' || name === 'customerPhone') clearConflict();
     // En el teléfono no se dejan escribir letras ni símbolos.
     setBookingForm((prev) => ({ ...prev, [name]: name === 'customerPhone' ? typePhone(value) : value }));
   }
 
-  async function handleSubmitBooking(event) {
+  function handleSubmitBooking(event) {
     event.preventDefault();
+    submitBooking();
+  }
+
+  // Envía la reserva. `resolution` es la respuesta del recepcionista al
+  // aviso de teléfono ya registrado (vacía en el primer intento):
+  //   { linkCustomerId } -> "es ese cliente"
+  //   { confirmNewCustomer: true } -> "es otra persona"
+  async function submitBooking(resolution = {}) {
     if (confirmation || isSubmittingBooking) return;
     // Campo incompleto: no se envia nada, se avisa cual falta.
     if (missingFields.length > 0) {
@@ -674,7 +688,9 @@ function ReservasSalon() {
         startDatetime: toIsoDatetime(date, startTime),
         endDatetime: toIsoDatetime(date, endTime),
         extraHours: extraHoursValue,
+        ...resolution,
       });
+      clearConflict();
       setConfirmation(result);
       setRefreshVersion((value) => value + 1);
       setBookingFeedback({ status: 'success', message: 'Reserva registrada correctamente.' });
@@ -683,6 +699,12 @@ function ReservasSalon() {
       // estaba libre ahora tiene esta reserva.
       setAvailability({ status: 'idle', available: null, reason: null, message: '' });
     } catch (error) {
+      // El teléfono es de otra persona: no es un error, es una pregunta
+      // que se responde en su propio aviso (debajo de los datos del cliente).
+      if (captureConflict(error, bookingForm.customerName.trim())) {
+        setBookingFeedback({ status: 'idle', message: '' });
+        return;
+      }
       setBookingFeedback({ status: 'error', message: error.message });
     }
   }
@@ -903,6 +925,16 @@ function ReservasSalon() {
               )}
             </div>
           </div>
+          {phoneConflict && (
+            <div className="mt-3">
+              <CustomerPhoneConflict
+                conflict={phoneConflict}
+                disabled={isSubmittingBooking}
+                onUseExisting={(customer) => submitBooking({ linkCustomerId: customer.customerId })}
+                onRegisterNew={() => submitBooking({ confirmNewCustomer: true })}
+              />
+            </div>
+          )}
         </div>
 
         {/* Panel derecho: mismo <aside> siempre, cambia solo el

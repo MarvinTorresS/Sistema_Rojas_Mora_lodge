@@ -17,7 +17,7 @@ jest.mock('../../src/models', () => ({
   Booking: { findAndCountAll: jest.fn(), findOne: jest.fn(), findByPk: jest.fn(), create: jest.fn() },
   Resource: { name: 'Resource', findOne: jest.fn() },
   ResourceBlock: { name: 'ResourceBlock', findOne: jest.fn() },
-  Customer: { name: 'Customer', findOrCreate: jest.fn(), findByPk: jest.fn() },
+  Customer: { name: 'Customer', findOne: jest.fn(), findAll: jest.fn(), create: jest.fn(), findByPk: jest.fn() },
   AuditLog: { create: jest.fn() },
   sequelize: { transaction: jest.fn(async (callback) => callback({ LOCK: { UPDATE: 'UPDATE' } })) },
 }));
@@ -364,7 +364,8 @@ describe('compatibilidad HTTP HU-001 y HU-002', () => {
     Resource.findOne.mockResolvedValue({ resourceId: 1, status: 'available' });
     ResourceBlock.findOne.mockResolvedValue(null);
     Booking.findOne.mockResolvedValue(null);
-    Customer.findOrCreate.mockResolvedValue([{ customerId: 4 }, false]);
+    // Telefono ya registrado con el MISMO nombre: se reutiliza ese cliente.
+    Customer.findAll.mockResolvedValue([{ customerId: 4, fullName: 'Kendall Mora' }]);
     Booking.create.mockResolvedValue({ bookingId: 32, status: 'active' });
     const start = new Date(Date.now() + 86400000);
     const payload = { resourceId: 1, customerName: 'Kendall Mora', customerPhone: '88887777', startDatetime: start.toISOString(), endDatetime: new Date(start.getTime() + 7200000).toISOString() };
@@ -375,6 +376,58 @@ describe('compatibilidad HTTP HU-001 y HU-002', () => {
     Booking.findOne.mockResolvedValueOnce({ bookingId: 32 });
     expect((await request(app).post('/api/field-bookings').send(payload)).status).toBe(409);
     expect((await request(app).post('/api/field-bookings').send({})).status).toBe(422);
+  });
+
+  describe('CA-5 reserva duplicada del mismo cliente (HU-001)', () => {
+    const start = new Date(Date.now() + 86400000);
+    const payload = {
+      resourceId: 1,
+      customerName: 'Kendall Mora',
+      customerPhone: '88887777',
+      startDatetime: start.toISOString(),
+      endDatetime: new Date(start.getTime() + 7200000).toISOString(),
+    };
+
+    beforeEach(() => {
+      Resource.findOne.mockResolvedValue({ resourceId: 1, status: 'available' });
+      ResourceBlock.findOne.mockResolvedValue(null);
+      Customer.findAll.mockResolvedValue([{ customerId: 4, fullName: 'Kendall Mora' }]);
+      Booking.create.mockResolvedValue({ bookingId: 40, status: 'active' });
+    });
+
+    it('rechaza (409) al mismo cliente que repite el horario de la cancha, con el mensaje de CA-5', async () => {
+      // La primera consulta de Booking.findOne es la del cliente: la reserva duplicada.
+      Booking.findOne.mockResolvedValueOnce({ bookingId: 31 });
+      const response = await request(app).post('/api/field-bookings').send(payload);
+      expect(response.status).toBe(409);
+      expect(response.body.error.message).toMatch(/Este cliente ya tiene/);
+      expect(Booking.create).not.toHaveBeenCalled();
+    });
+
+    it('filtra la busqueda del cliente por ESTA cancha: una reserva de salon o cabana no bloquea', async () => {
+      Booking.findOne.mockResolvedValue(null);
+      const response = await request(app).post('/api/field-bookings').send(payload);
+      expect(response.status).toBe(201);
+      const customerQuery = Booking.findOne.mock.calls[0][0].where;
+      expect(customerQuery).toMatchObject({ customerId: 4, resourceId: 1 });
+    });
+
+    it('otro cliente en un horario ocupado sigue recibiendo el conflicto general (CA-2)', async () => {
+      Customer.findAll.mockResolvedValue([{ customerId: 9, fullName: 'Kendall Mora' }]);
+      // 1ra consulta (cliente 9): sin duplicado. 2da (cancha): ocupada por otro.
+      Booking.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce({ bookingId: 31 });
+      const response = await request(app).post('/api/field-bookings').send(payload);
+      expect(response.status).toBe(409);
+      expect(response.body.error.message).toMatch(/Ya existe una reserva en ese horario/);
+    });
+
+    it('un rechazo por conflicto NO crea al cliente nuevo', async () => {
+      Customer.findAll.mockResolvedValue([]);
+      Booking.findOne.mockResolvedValueOnce({ bookingId: 31 });
+      const response = await request(app).post('/api/field-bookings').send(payload);
+      expect(response.status).toBe(409);
+      expect(Customer.create).not.toHaveBeenCalled();
+    });
   });
 
   it('HU-002 sigue permitiendo listar sin criterios de busqueda', async () => {
@@ -414,7 +467,7 @@ describe('HU-005 modificar fechas de reserva', () => {
     expect(response.body.data.customer.customerId).toBe(4);
     expect(response.body.data.resource.resourceId).toBe(1);
     expect(booking.save).toHaveBeenCalledWith(expect.objectContaining({ fields: ['startDatetime', 'endDatetime'], transaction: expect.any(Object) }));
-    expect(Customer.findOrCreate).not.toHaveBeenCalled();
+    expect(Customer.create).not.toHaveBeenCalled();
     const options = Booking.findOne.mock.calls[0][0];
     expect(options.where.bookingId).toEqual({ [Op.ne]: 15 });
     expect(options.where.resourceId).toBe(1);
@@ -424,7 +477,7 @@ describe('HU-005 modificar fechas de reserva', () => {
 
   it('permite conservar el mismo intervalo sin conflicto consigo misma', async () => {
     await expect(service.updateFieldBooking(15, { startDatetime: start.toISOString(), endDatetime: end.toISOString() })).resolves.toMatchObject({ bookingId: 15 });
-    expect(Booking.findOne.mock.calls[1][0].where).toMatchObject({ customerId: 4, bookingId: { [Op.ne]: 15 } });
+    expect(Booking.findOne.mock.calls[0][0].where).toMatchObject({ customerId: 4, resourceId: 1, bookingId: { [Op.ne]: 15 } });
   });
 
   it.each(['recurso', 'cliente', 'bloqueo'])('CA-2 rechaza conflicto de %s sin guardar', async (kind) => {
