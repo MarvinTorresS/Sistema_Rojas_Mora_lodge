@@ -12,6 +12,7 @@ const {
 } = require('./cabinSearch.util');
 
 const SEARCH_TERM_REQUIRED_CODE = 'SEARCH_TERM_REQUIRED';
+const { cabinOperationOrder } = require('./cabinOperationOrder');
 
 // GET /api/cabin-bookings/search?q=
 //
@@ -25,7 +26,7 @@ const SEARCH_TERM_REQUIRED_CODE = 'SEARCH_TERM_REQUIRED';
 //
 // Incluye reservas de TODOS los estados: ubicar la informacion de
 // hospedaje de un huesped incluye su historial (finalizadas, canceladas).
-async function searchCabinBookings({ q, page = 1, pageSize = DEFAULT_PAGE_SIZE } = {}) {
+async function searchCabinBookings({ q, page = 1, pageSize = DEFAULT_PAGE_SIZE, operation } = {}) {
   const term = normalizeSearchTerm(q);
   if (!term) {
     throw new DomainError(EMPTY_SEARCH_MESSAGE, 422, { code: SEARCH_TERM_REQUIRED_CODE });
@@ -38,6 +39,7 @@ async function searchCabinBookings({ q, page = 1, pageSize = DEFAULT_PAGE_SIZE }
   const idLike = /^\d+$/.test(digitsOnly) && digitsOnly !== term ? `%${digitsOnly}%` : null;
 
   const result = await readCabinBookings({
+    ...(operation ? { order: cabinOperationOrder(operation) } : {}),
     page: currentPage, pageSize: size,
     customerWhere: {
       [Op.or]: [

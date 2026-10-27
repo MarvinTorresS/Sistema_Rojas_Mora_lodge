@@ -87,6 +87,27 @@ beforeEach(() => {
 
 // ---------------------------------------------------------------------------
 describe('HU-018 buscar reserva de cabina por huesped', () => {
+  it('conserva el orden original sin operation y pagina el orden operativo en SQL', async () => {
+    Booking.findAndCountAll.mockResolvedValue({ rows: [], count: 45 });
+    await request(app).get(`${base}/search?q=wagner&page=2&pageSize=20`);
+    expect(Booking.findAndCountAll.mock.calls.at(-1)[0].order).toEqual([['startDatetime', 'DESC'], ['bookingId', 'DESC']]);
+    for (const operation of ['check-in', 'check-out']) {
+      const result = await request(app).get(`${base}/search?q=wagner&operation=${operation}&page=2&pageSize=20`);
+      expect(result.status).toBe(200);
+      const options = Booking.findAndCountAll.mock.calls.at(-1)[0];
+      expect(options.offset).toBe(20);
+      expect(options.limit).toBe(20);
+      expect(options.order.slice(1)).toEqual([['startDatetime', 'ASC'], ['bookingId', 'ASC']]);
+      expect(options.order[0][0].val).toContain('CASE WHEN');
+    }
+  });
+
+  it('rechaza operaciones desconocidas antes de consultar reservas', async () => {
+    const result = await request(app).get(`${base}/search?q=wagner&operation=otro`);
+    expect(result.status).toBe(422);
+    expect(Booking.findAndCountAll).not.toHaveBeenCalled();
+  });
+
   const row = (overrides = {}) => ({
     bookingId: 5,
     status: 'active',

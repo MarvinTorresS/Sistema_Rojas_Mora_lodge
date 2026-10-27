@@ -283,14 +283,20 @@ function ReservasCabina() {
         <div>
           {/* Mismo encabezado que Cancha y Salón: vuelve a "Elegir espacio"
               (/reservar), la pantalla anterior real del flujo. */}
-          <Link to="/reservar" className="inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-            <ArrowLeft size={15} />
+          <Link to="/reservar" className="group inline-flex min-h-[44px] items-center gap-2 rounded-full border border-line bg-white/80 px-4 py-2 text-sm font-medium text-primary-800 transition-all duration-200 ease-out hover:-translate-x-0.5 hover:border-primary-300 hover:bg-primary-50 hover:shadow-sm active:translate-x-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 motion-reduce:transform-none motion-reduce:transition-none">
+            <ArrowLeft size={18} aria-hidden="true" className="transition-transform duration-200 ease-out group-hover:-translate-x-0.5 motion-reduce:transform-none motion-reduce:transition-none" />
             Volver a elegir espacio
           </Link>
           <h2 className="mt-3 font-display text-2xl font-semibold text-primary-900">Reserva de cabina</h2>
           <p className="text-sm text-muted">Registrá la estadía con los datos del huésped.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+            <Link to="/cabinas/check-in" className="inline-flex min-h-[44px] items-center rounded-[10px] border border-line bg-white px-4 text-sm font-semibold text-primary-800">
+              Check-in
+            </Link>
+            <Link to="/cabinas/check-out" className="inline-flex min-h-[44px] items-center rounded-[10px] border border-line bg-white px-4 text-sm font-semibold text-primary-800">
+              Check-out
+            </Link>
           <Link
             to="/cabinas/reservas"
             className="inline-flex min-h-[44px] items-center gap-2 rounded-[10px] border border-line bg-white px-4 text-sm font-semibold text-primary-800 shadow-card transition-colors hover:border-primary-400 hover:bg-primary-50"

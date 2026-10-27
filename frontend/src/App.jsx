@@ -20,6 +20,8 @@ import TarifasCabina from './pages/TarifasCabina.jsx';
 import PlanesSalon from './pages/PlanesSalon.jsx';
 import BuscarReservaCabina from './pages/BuscarReservaCabina.jsx';
 import AdminPlanesSalon from './pages/AdminPlanesSalon.jsx';
+import CheckInCabinas from './pages/CheckInCabinas.jsx';
+import CheckOutCabinas from './pages/CheckOutCabinas.jsx';
 
 /**
  * Router principal de la aplicación.
@@ -63,6 +65,8 @@ function App() {
               se suman a esta misma página: no hace falta un
               PantallaPendiente aparte por HU. */}
           <Route path="cabinas" element={<ReservasCabina />} />
+          <Route path="cabinas/check-in" element={<CheckInCabinas />} />
+          <Route path="cabinas/check-out" element={<CheckOutCabinas />} />
           {/* HU-128 (Marvin) — tarifa por noche de las cabinas (rol Administrador). */}
           <Route path="cabinas/tarifas" element={<TarifasCabina />} />
           {/* HU-018/HU-019 — buscar una reserva de cabina por huésped y modificarla. */}

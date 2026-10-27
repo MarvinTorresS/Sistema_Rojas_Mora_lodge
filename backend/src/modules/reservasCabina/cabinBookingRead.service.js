@@ -49,7 +49,7 @@ async function totalsFor(rows) {
   return getRecordedStayTotals({ fallbacks });
 }
 
-async function readCabinBookings({ page = 1, pageSize = DEFAULT_PAGE_SIZE, customerWhere } = {}) {
+async function readCabinBookings({ page = 1, pageSize = DEFAULT_PAGE_SIZE, customerWhere, order } = {}) {
   const currentPage = Number(page);
   const size = Number(pageSize);
   const { rows, count } = await Booking.findAndCountAll({
@@ -71,7 +71,7 @@ async function readCabinBookings({ page = 1, pageSize = DEFAULT_PAGE_SIZE, custo
     distinct: true,
     // Las estadias mas recientes primero; el id desempata para que la
     // paginacion sea estable.
-    order: [['startDatetime', 'DESC'], ['bookingId', 'DESC']],
+    order: order ?? [['startDatetime', 'DESC'], ['bookingId', 'DESC']],
     limit: size,
     offset: (currentPage - 1) * size,
   });

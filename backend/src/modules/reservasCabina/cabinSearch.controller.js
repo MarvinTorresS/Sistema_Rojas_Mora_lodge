@@ -11,6 +11,7 @@ async function searchBookings(req, res, next) {
       q: req.query.q,
       page: req.query.page,
       pageSize: req.query.pageSize,
+      operation: req.query.operation,
     });
     return res.json({ data: items, meta });
   } catch (error) {

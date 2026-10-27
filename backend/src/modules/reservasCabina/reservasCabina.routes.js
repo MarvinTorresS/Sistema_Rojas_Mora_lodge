@@ -27,6 +27,10 @@ const { listCabinBookingsRules } = require('./cabinList.validator');
 
 const cancellationController = require('./cabinCancellation.controller');
 const { cancelCabinBookingRules } = require('./cabinCancellation.validator');
+const checkInController = require('./cabinCheckIn.controller');
+const { checkInRules } = require('./cabinCheckIn.validator');
+const checkOutController = require('./cabinCheckOut.controller');
+const { checkOutRules } = require('./cabinCheckOut.validator');
 
 const router = express.Router();
 
@@ -62,10 +66,11 @@ router.patch('/:bookingId', updateCabinBookingRules, updateController.updateBook
 router.post('/:bookingId/cancel', cancelCabinBookingRules, cancellationController.cancelBooking);
 
 // HU-021 (Wagner) — Registrar el ingreso (check-in) del huesped.
-// TODO (Wagner, Sprint 3): POST /:bookingId/check-in
+router.post('/:bookingId/check-in', require('./cabinApprovalThrottle.middleware'), checkInRules, checkInController.checkIn);
+router.get('/:bookingId/early-check-in-quote', checkInRules, checkInController.earlyQuote);
 
 // HU-022 (Wagner) — Registrar la salida (check-out) del huesped.
-// TODO (Wagner, Sprint 3): POST /:bookingId/check-out
+router.post('/:bookingId/check-out', checkOutRules, checkOutController.checkOut);
 
 // HU-127 (Marvin) — Gestionar la solicitud de extension de hospedaje.
 // Sus tres endpoints viven en cabinExtension.* (un archivo por capa) para

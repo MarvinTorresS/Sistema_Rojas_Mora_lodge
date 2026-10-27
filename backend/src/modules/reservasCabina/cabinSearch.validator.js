@@ -14,6 +14,8 @@ const {
 const searchErrorsHandler = buildValidationErrorsHandler((details) => details[0].message);
 
 const searchCabinBookingsRules = [
+  query('operation').optional().isIn(['check-in', 'check-out'])
+    .withMessage('La operación debe ser check-in o check-out.'),
   // CA-1 parte de "se ingreso un criterio de busqueda": sin criterio no hay
   // busqueda. Se revisa el texto YA limpio, asi "   " cuenta como vacio.
   query('q').custom((value) => {
