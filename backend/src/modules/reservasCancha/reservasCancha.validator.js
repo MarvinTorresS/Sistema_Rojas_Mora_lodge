@@ -84,6 +84,9 @@ const createBookingRules = [
 // que page/pageSize sean enteros dentro de rango. El filtrado real y la
 // paginacion los hace el service.
 const listBookingsRules = [
+  ...['dateFrom', 'dateBefore'].map((name) => query(name).optional()
+    .isDate({ format: 'YYYY-MM-DD', strictMode: true })
+    .withMessage(`${name} debe ser una fecha valida con formato yyyy-mm-dd.`)),
   query('date')
     .optional()
     // strictMode: exige EXACTAMENTE el formato yyyy-mm-dd y ademas que

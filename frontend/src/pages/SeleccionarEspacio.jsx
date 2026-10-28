@@ -18,7 +18,7 @@ const ESPACIOS = [
     to: '/cancha',
     icon: CircleDot,
     titulo: 'Cancha sintética',
-    detalle: '₡8.000 por hora · libre de 4 a 10 p.m.',
+    detalle: '₡18.000 por hora · de 3 a 9 p.m.',
   },
   {
     to: '/salon',

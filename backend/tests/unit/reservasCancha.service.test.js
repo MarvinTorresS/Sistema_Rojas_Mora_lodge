@@ -549,3 +549,18 @@ describe('HU-005 modificar fechas de reserva', () => {
     expect(booking.cancellationReason).toBe('Cambio solicitado');
   });
 });
+
+describe('archivo semanal de cancha', () => {
+  it('aplica limites locales antes de paginar sin cambiar estados ni registros', async () => {
+    const { Op } = require('sequelize');
+    Booking.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+    await service.listFieldBookings({ dateFrom: '2026-10-13', dateBefore: '2026-10-20', page: '2', pageSize: '20' });
+    const query = Booking.findAndCountAll.mock.calls.at(-1)[0];
+    expect(query.where.startDatetime[Op.gte].toISOString()).toBe('2026-10-13T06:00:00.000Z');
+    expect(query.where.startDatetime[Op.lt].toISOString()).toBe('2026-10-20T06:00:00.000Z');
+    expect(query.offset).toBe(20);
+    await service.listFieldBookings({ dateFrom: '2026-10-20' });
+    const recent = Booking.findAndCountAll.mock.calls.at(-1)[0];
+    expect(recent.where.startDatetime[Op.lt]).toBeUndefined();
+  });
+});

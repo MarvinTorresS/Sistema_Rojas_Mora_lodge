@@ -20,7 +20,7 @@ it('muestra 20 filas con sus datos y permite recorrer la segunda página', async
   fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
   await screen.findByText('Cliente 21');
   expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(2);
-  expect(listFieldBookings).toHaveBeenLastCalledWith({ page: 2, pageSize: 20 });
+  expect(listFieldBookings).toHaveBeenLastCalledWith({ page: 2, pageSize: 20, dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), dateBefore: undefined });
   expect(screen.getByRole('button', { name: 'Siguiente' }).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Anterior' }));
   await screen.findByText('Cliente 1');
@@ -30,18 +30,18 @@ it('el estado vacío global ofrece acceso al formulario', async () => {
   listFieldBookings.mockResolvedValue({ data: [], meta: { page: 1, total: 0, totalPages: 0 } });
   const onRegister = vi.fn();
   render(<ListadoReservasCancha onRegister={onRegister} />);
-  await screen.findByText('No hay reservas registradas actualmente');
+  await screen.findByText('No hay reservas recientes ni próximas.');
   fireEvent.click(screen.getByRole('button', { name: 'Registrar reserva' }));
   expect(onRegister).toHaveBeenCalledOnce();
   expect(screen.queryByRole('table')).toBeNull();
-  expect(listFieldBookings).toHaveBeenCalledWith({ page: 1, pageSize: 20 });
+  expect(listFieldBookings).toHaveBeenCalledWith({ page: 1, pageSize: 20, dateFrom: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), dateBefore: undefined });
 });
 
 it('un fallo de conexión se muestra como error y permite reintentar', async () => {
   listFieldBookings.mockRejectedValueOnce(new Error('Sin conexión')).mockResolvedValueOnce({ data: [booking(1)], meta: { page: 1, total: 1, totalPages: 1 } });
   render(<ListadoReservasCancha />);
   expect((await screen.findByRole('alert')).textContent).toBe('Sin conexión');
-  expect(screen.queryByText('No hay reservas registradas actualmente')).toBeNull();
+  expect(screen.queryByText('No hay reservas recientes ni próximas.')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   await screen.findByText('Cliente 1');
 });

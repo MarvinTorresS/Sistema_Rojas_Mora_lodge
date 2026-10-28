@@ -89,7 +89,7 @@ export async function createFieldBooking(payload) {
  * Todos los filtros son opcionales; si no se pasan, el backend devuelve
  * la primera página con su tamaño por defecto.
  *
- * @param {{ date?: string, status?: string, page?: number, pageSize?: number }} [params]
+ * @param {{ date?: string, dateFrom?: string, dateBefore?: string, status?: string, page?: number, pageSize?: number }} [params]
  *   `date` en formato yyyy-mm-dd.
  * @returns {Promise<{ data: object[], meta: { page:number, pageSize:number, total:number, totalPages:number } }>}
  * @throws {Error} con `.message` listo para mostrar y `.status` (código HTTP).

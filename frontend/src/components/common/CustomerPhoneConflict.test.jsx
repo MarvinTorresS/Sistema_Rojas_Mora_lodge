@@ -2,7 +2,7 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import CustomerPhoneConflict from './CustomerPhoneConflict';
 import ReservasSalon from '../../pages/ReservasSalon';
 import ReservasCancha from '../../pages/ReservasCancha';
@@ -70,6 +70,8 @@ describe('Salón (HU-013): teléfono ya registrado con otro nombre', () => {
   };
 
   beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
     vi.resetAllMocks();
     listHallBookings.mockResolvedValue({ data: [], meta: { total: 0, totalPages: 0 } });
     listEventHallPlans.mockResolvedValue({ data: [plan], meta: { total: 1 } });
@@ -138,10 +140,12 @@ describe('Cancha (HU-001): teléfono ya registrado con otro nombre', () => {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const isoTomorrow = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
     fireEvent.change(screen.getByLabelText('Fecha'), { target: { value: isoTomorrow } });
+    const freeSlot = await screen.findByRole('button', { name: /3:00.*4:00.*Reservar$/ });
+    await waitFor(() => expect(freeSlot.disabled).toBe(false));
+    fireEvent.click(freeSlot);
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar con la reserva' }));
     fireEvent.change(screen.getByLabelText('Nombre del cliente'), { target: { value: 'Pedro Soto Vargas' } });
     fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '8888-7777' } });
-    const freeSlot = (await screen.findAllByRole('button', { name: /Reservar$/ })).find((button) => !button.disabled);
-    fireEvent.click(freeSlot);
     fireEvent.click(screen.getAllByRole('button', { name: 'Registrar reserva' }).find((button) => button.type === 'submit'));
 
     fireEvent.click(await screen.findByRole('button', { name: 'Usar a Juan Pérez Mora' }));

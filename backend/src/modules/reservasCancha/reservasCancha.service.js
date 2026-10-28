@@ -192,7 +192,7 @@ function localDayRange(isoDate) {
 // unico aspecto que el validator no puede: que `status`, si viene, sea
 // realmente uno de los estados que el modelo admite. Se separa del
 // acceso a BD para poder probarla con Jest sin levantar MySQL.
-function buildListBookingsWhere({ date, status } = {}) {
+function buildListBookingsWhere({ date, status, dateFrom, dateBefore } = {}) {
   const where = {};
 
   if (status !== undefined && status !== null && status !== '') {
@@ -205,6 +205,11 @@ function buildListBookingsWhere({ date, status } = {}) {
   if (date) {
     const { start, end } = localDayRange(date);
     where.startDatetime = { [Op.gte]: start, [Op.lt]: end };
+  } else if (dateFrom || dateBefore) {
+    where.startDatetime = {
+      ...(dateFrom ? { [Op.gte]: localDayRange(dateFrom).start } : {}),
+      ...(dateBefore ? { [Op.lt]: localDayRange(dateBefore).start } : {}),
+    };
   }
 
   return where;
