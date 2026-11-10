@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Pruebas de la capa de servicio de HU-008, HU-009, HU-018 y HU-019:
+// Pruebas de la capa de servicio de HU-018 y HU-019:
 // qué URL/cuerpo se manda y cómo se traducen los errores, en
 // especial el caso "el servidor no responde".
 vi.mock('./api', () => ({
@@ -8,7 +8,6 @@ vi.mock('./api', () => ({
 }));
 
 import api from './api';
-import { listEventHallPlans, createEventHallPlan } from './planesSalonService';
 import { searchCabinBookings, updateCabinBooking } from './reservasCabinaService';
 
 const CONNECTION = 'No se pudo conectar con el servidor';
@@ -17,49 +16,6 @@ const CONNECTION = 'No se pudo conectar con el servidor';
 const networkError = () => Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' });
 const httpError = (status, error) => Object.assign(new Error('Request failed'), {
   response: { status, data: { error } },
-});
-
-describe('planesSalonService', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('lista los planes y devuelve el cuerpo tal cual', async () => {
-    api.get.mockResolvedValue({ data: { data: [{ planId: 1 }], meta: { total: 1 } } });
-    const result = await listEventHallPlans({ hours: 6 });
-    expect(api.get).toHaveBeenCalledWith('/event-hall-plans', { params: { hours: 6 } });
-    expect(result.meta.total).toBe(1);
-  });
-
-  it('registra un plan y devuelve el plan creado', async () => {
-    api.post.mockResolvedValue({ data: { data: { planId: 9, planName: 'Plan X' } } });
-    const plan = await createEventHallPlan({ planName: 'Plan X', hours: 3, price: 1000 });
-    expect(api.post).toHaveBeenCalledWith('/event-hall-plans', { planName: 'Plan X', hours: 3, price: 1000 });
-    expect(plan.planId).toBe(9);
-  });
-
-  it('sin respuesta del servidor avisa que no hay conexión (listar y crear)', async () => {
-    api.get.mockRejectedValue(networkError());
-    api.post.mockRejectedValue(networkError());
-    await expect(listEventHallPlans()).rejects.toThrow(CONNECTION);
-    await expect(createEventHallPlan({})).rejects.toThrow(CONNECTION);
-  });
-
-  it('un error del servidor conserva su mensaje, código y errores por campo', async () => {
-    api.post.mockRejectedValue(httpError(409, {
-      message: 'Ya existe un plan con ese nombre',
-      code: 'DUPLICATE_PLAN_NAME',
-      details: [{ field: 'planName', message: 'Ya existe un plan con ese nombre' }],
-    }));
-    const error = await createEventHallPlan({}).catch((e) => e);
-    expect(error.message).toBe('Ya existe un plan con ese nombre');
-    expect(error.status).toBe(409);
-    expect(error.code).toBe('DUPLICATE_PLAN_NAME');
-    expect(error.fieldErrors).toEqual({ planName: 'Ya existe un plan con ese nombre' });
-  });
-
-  it('un error del servidor sin mensaje usa el texto genérico, no el de conexión', async () => {
-    api.get.mockRejectedValue(Object.assign(new Error('x'), { response: { status: 500, data: {} } }));
-    await expect(listEventHallPlans()).rejects.toThrow('No se pudieron cargar los planes del salón. Intentá de nuevo.');
-  });
 });
 
 describe('reservasCabinaService (HU-018 y HU-019)', () => {

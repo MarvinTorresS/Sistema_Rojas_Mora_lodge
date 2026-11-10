@@ -16,7 +16,6 @@ jest.mock('../../src/models', () => ({
   Resource: { name: 'Resource', findOne: jest.fn() },
   ResourceBlock: { name: 'ResourceBlock', findOne: jest.fn() },
   Customer: { name: 'Customer', findAll: jest.fn(), create: jest.fn() },
-  EventHallPricingPlan: { findOne: jest.fn(), findAll: jest.fn() },
   sequelize: { transaction: jest.fn(async (callback) => callback({ LOCK: { UPDATE: 'UPDATE' } })) },
 }));
 
@@ -24,7 +23,7 @@ const request = require('supertest');
 const { Sequelize, Op } = require('sequelize');
 const app = require('../../src/app');
 const {
-  Booking, Resource, ResourceBlock, Customer, EventHallPricingPlan,
+  Booking, Resource, ResourceBlock, Customer,
 } = require('../../src/models');
 const {
   matchCustomerByPhone, namesMatch, buildPhoneLookupWhere, CUSTOMER_PHONE_CONFLICT_CODE,
@@ -178,14 +177,13 @@ describe('POST /api/field-bookings (cancha, HU-001) con telefono ya registrado',
 });
 
 describe('POST /api/hall-bookings (salon, HU-013) con telefono ya registrado', () => {
-  const start = new Date(Date.now() + 2 * 86400000);
+  const day = new Date(Date.now() + 2 * 86400000);
+  const pad = (value) => String(value).padStart(2, '0');
   const payload = {
     resourceId: 2,
-    planId: 1,
     customerName: 'Pedro Soto Vargas',
     customerPhone: '88887777',
-    startDatetime: start.toISOString(),
-    endDatetime: new Date(start.getTime() + 6 * 3600000).toISOString(),
+    date: `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`,
   };
 
   beforeEach(() => {
@@ -193,7 +191,6 @@ describe('POST /api/hall-bookings (salon, HU-013) con telefono ya registrado', (
     ResourceBlock.findOne.mockResolvedValue(null);
     Booking.findOne.mockResolvedValue(null);
     Booking.create.mockResolvedValue({ bookingId: 60 });
-    EventHallPricingPlan.findOne.mockResolvedValue({ planId: 1, planName: 'Medio dia', hours: 6, price: 150000 });
     Customer.findAll.mockResolvedValue([JUAN]);
     Customer.create.mockResolvedValue({ customerId: 13, fullName: 'Pedro Soto Vargas' });
   });

@@ -6,8 +6,9 @@ import { cleanup, fireEvent, render, screen, within, waitFor } from '@testing-li
 import CustomerPhoneConflict from './CustomerPhoneConflict';
 import ReservasSalon from '../../pages/ReservasSalon';
 import ReservasCancha from '../../pages/ReservasCancha';
-import { checkHallAvailability, createHallBooking, listHallBookings } from '../../services/reservasSalonService';
-import { listEventHallPlans } from '../../services/planesSalonService';
+import {
+  checkHallAvailability, createHallBooking, getHallSchedule, listHallBookings,
+} from '../../services/reservasSalonService';
 import {
   createFieldBooking, listFieldBookings, searchFieldBookings, filterFieldBookingsByStatus,
 } from '../../services/reservasCanchaService';
@@ -18,9 +19,8 @@ import {
 
 vi.mock('../../services/reservasSalonService', () => ({
   listHallBookings: vi.fn(), getHallBooking: vi.fn(), updateHallBooking: vi.fn(), cancelHallBooking: vi.fn(),
-  checkHallAvailability: vi.fn(), createHallBooking: vi.fn(),
+  checkHallAvailability: vi.fn(), createHallBooking: vi.fn(), getHallSchedule: vi.fn(),
 }));
-vi.mock('../../services/planesSalonService', () => ({ listEventHallPlans: vi.fn() }));
 vi.mock('../../services/reservasCanchaService', () => ({
   createFieldBooking: vi.fn(), listFieldBookings: vi.fn(), searchFieldBookings: vi.fn(),
   filterFieldBookingsByStatus: vi.fn(), updateFieldBooking: vi.fn(), cancelFieldBooking: vi.fn(),
@@ -65,36 +65,33 @@ describe('CustomerPhoneConflict (componente)', () => {
 });
 
 describe('Salón (HU-013): teléfono ya registrado con otro nombre', () => {
-  const plan = {
-    planId: 9, resourceId: 2, planName: 'Plan Común', hours: 4, price: 50000, includedServices: [], depositPercentage: null, extraHourPrice: 8000,
-  };
+  const created = (bookingId) => ({
+    booking: { bookingId }, date: '2026-11-20', checkInTime: '15:00', checkOutTime: '20:00',
+  });
 
   beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
     vi.resetAllMocks();
     listHallBookings.mockResolvedValue({ data: [], meta: { total: 0, totalPages: 0 } });
-    listEventHallPlans.mockResolvedValue({ data: [plan], meta: { total: 1 } });
-    checkHallAvailability.mockResolvedValue({ available: true, reason: null });
+    getHallSchedule.mockResolvedValue({ checkInTime: '15:00', checkOutTime: '20:00' });
+    checkHallAvailability.mockResolvedValue({ available: true, reason: null, checkInTime: '15:00', checkOutTime: '20:00' });
   });
 
   async function fillAndSubmit() {
     render(<MemoryRouter><ReservasSalon /></MemoryRouter>);
-    fireEvent.click(await screen.findByRole('button', { name: /Seleccionar plan|^Plan /, expanded: false }));
-    fireEvent.click(within(screen.getByRole('list', { name: 'Planes disponibles' })).getByRole('button', { name: /Plan Común/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Consultar disponibilidad' }));
-    await screen.findByText('El salon esta disponible en ese horario.');
+    fireEvent.click(await screen.findByRole('button', { name: 'Consultar disponibilidad' }));
+    await screen.findByText('El salon esta disponible ese dia.');
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar con la reserva' }));
     fireEvent.change(screen.getByLabelText('Nombre del cliente'), { target: { value: 'Pedro Soto Vargas' } });
-    fireEvent.change(screen.getByLabelText('Telefono'), { target: { value: '8888-7777' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+    fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '8888-7777' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar reserva' }));
   }
 
   it('muestra el aviso en vez de un error y, al elegir al cliente existente, reenvía con linkCustomerId', async () => {
     createHallBooking
       .mockRejectedValueOnce(phoneConflictError())
-      .mockResolvedValueOnce({
-        booking: { bookingId: 31 }, plan, extraHours: 0, extraHoursCost: 0, totalPrice: 50000, depositPercentage: 0.3, depositAmount: 15000,
-      });
+      .mockResolvedValueOnce(created(31));
     await fillAndSubmit();
     fireEvent.click(await screen.findByRole('button', { name: 'Usar a Juan Pérez Mora' }));
     expect(await screen.findByText('Reserva confirmada')).toBeTruthy();
@@ -104,9 +101,7 @@ describe('Salón (HU-013): teléfono ya registrado con otro nombre', () => {
   });
 
   it('"es otra persona" reenvía con confirmNewCustomer', async () => {
-    createHallBooking.mockRejectedValueOnce(phoneConflictError()).mockResolvedValueOnce({
-      booking: { bookingId: 32 }, plan, extraHours: 0, extraHoursCost: 0, totalPrice: 50000, depositPercentage: 0.3, depositAmount: 15000,
-    });
+    createHallBooking.mockRejectedValueOnce(phoneConflictError()).mockResolvedValueOnce(created(32));
     await fillAndSubmit();
     fireEvent.click(await screen.findByRole('button', { name: 'Es otra persona: registrar a Pedro Soto Vargas' }));
     expect(await screen.findByText('Reserva confirmada')).toBeTruthy();
@@ -117,7 +112,7 @@ describe('Salón (HU-013): teléfono ya registrado con otro nombre', () => {
     createHallBooking.mockRejectedValueOnce(phoneConflictError());
     await fillAndSubmit();
     await screen.findByRole('button', { name: 'Usar a Juan Pérez Mora' });
-    fireEvent.change(screen.getByLabelText('Telefono'), { target: { value: '88886666' } });
+    fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '88886666' } });
     expect(screen.queryByRole('button', { name: 'Usar a Juan Pérez Mora' })).toBeNull();
   });
 });

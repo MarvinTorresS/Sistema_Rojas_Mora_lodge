@@ -10,8 +10,7 @@ async function checkAvailability(req, res, next) {
   try {
     const result = await reservasSalonService.checkHallAvailability({
       resourceId: req.query.resourceId,
-      startDatetime: req.query.startDatetime,
-      endDatetime: req.query.endDatetime,
+      date: req.query.date,
     });
     return res.json({ data: result });
   } catch (error) {
@@ -19,6 +18,11 @@ async function checkAvailability(req, res, next) {
     // sigue hacia el errorHandler global (500).
     return next(error);
   }
+}
+
+// GET /api/hall-bookings/schedule — horario fijo de entrada y salida.
+function getSchedule(req, res) {
+  return res.json({ data: reservasSalonService.getHallSchedule() });
 }
 
 // POST /api/hall-bookings — HU-013.
@@ -63,4 +67,5 @@ module.exports = {
   updateBooking,
   checkAvailability,
   createBooking,
+  getSchedule,
 };

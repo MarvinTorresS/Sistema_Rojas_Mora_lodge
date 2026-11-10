@@ -1,10 +1,8 @@
 'use strict';
 
 // Router de RESERVAS del salon de eventos (HU-007, HU-013, HU-014,
-// HU-015). El CRUD de planes de precio (HU-008 a HU-012) es una
-// entidad distinta -- va en un archivo hermano, eventHallPlans.routes.js,
-// montado bajo su propio prefijo (/api/event-hall-plans) por quien
-// tenga esas HU este sprint (ver comentario en app.js).
+// HU-015). El salon se reserva por dia (entrada y salida fijas); ya no
+// existe el catalogo de planes de precio.
 //
 // HU-007, HU-013, HU-014 y HU-015 implementadas. Mantener las rutas
 // estaticas antes de /:bookingId.
@@ -14,17 +12,18 @@ const { checkAvailabilityRules, createHallBookingRules, bookingIdRules, listHall
 
 const router = express.Router();
 
-// HU-007 (Marvin) — Consultar disponibilidad del salon para una fecha
-// y horario. Query string: ?resourceId=&startDatetime=&endDatetime=
-// (ISO 8601).
+// Horario fijo de entrada y salida del salon.
+router.get('/schedule', controller.getSchedule);
+
+// HU-007 (Marvin) — Consultar disponibilidad del salon para un dia.
+// Query string: ?resourceId=&date=yyyy-mm-dd
 router.get('/availability', checkAvailabilityRules, controller.checkAvailability);
 
-// HU-013 (Marvin) — Registrar la reserva del salon con el plan de
-// precios seleccionado.
+// HU-013 (Marvin) — Registrar la reserva del salon para un dia.
 router.post('/', createHallBookingRules, controller.createBooking);
 
 // HU-014 (Kendall) — Modificar una reserva existente del salon de
-// eventos: consulta y edicion de plan, fecha y horario.
+// eventos: consulta y cambio de dia.
 router.get('/', listHallBookingsRules, controller.listBookings);
 router.get('/:bookingId', bookingIdRules, controller.getBooking);
 router.patch('/:bookingId', updateHallBookingRules, controller.updateBooking);

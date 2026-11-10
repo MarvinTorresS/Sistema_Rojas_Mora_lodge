@@ -1,186 +1,154 @@
 'use strict';
 
 // Logica de negocio de las reservas del salon de eventos (HU-007,
-// HU-013 -- Marvin, Sprint 2). Misma separacion de capas que
-// reservasCancha.service.js: esta capa no sabe nada de HTTP, recibe
-// datos ya validados en su FORMA y lanza DomainError con un
-// statusCode cuando una regla de NEGOCIO falla.
+// HU-013 -- Marvin, Sprint 2; HU-014, HU-015 -- Kendall). Misma
+// separacion de capas que reservasCancha.service.js: esta capa no sabe
+// nada de HTTP, recibe datos ya validados en su FORMA y lanza
+// DomainError con un statusCode cuando una regla de NEGOCIO falla.
+//
+// El salon se reserva POR DIA (como un hotel): hora de entrada y de
+// salida fijas (ver reservasSalon.schedule.util.js), un solo cliente
+// por dia y con al menos un dia de anticipacion. Ya no hay planes de precio, horas extra ni anticipo.
 const {
-  Booking, Resource, ResourceBlock, EventHallPricingPlan, Customer, sequelize,
+  Booking, Resource, ResourceBlock, Customer, sequelize,
 } = require('../../models');
+const { Op } = require('sequelize');
 const { DomainError } = require('../../utils/domainError.util');
-const { contractedHallPlan, contractedHallPlans, recordContractedHallPlan } = require('./hallPlanSnapshot.util');
 const { buildBookingOverlapWhere, buildBlockOverlapWhere } = require('../../utils/bookingOverlap.util');
 const { matchCustomerByPhone, createCustomer } = require('../../services/customerResolution.service');
-const {
-  assertExtraHours, parseExtraHours, extraHoursCost, totalPrice,
-} = require('./reservasSalon.extraHours.util');
+const { hallDayWindow, localIsoDate, hallSchedule } = require('./reservasSalon.schedule.util');
 
 // Tipo de recurso que atiende este modulo (ver resource.model.js).
 const EVENT_HALL_RESOURCE_TYPE = 'event_hall';
 
 // CA-4 de HU-007 y HU-013: limite de dias hacia el futuro para
-// consultar disponibilidad o registrar una reserva. Se redeclara aqui
-// en vez de importarla de reservasCancha.service.js a proposito: cada
-// modulo es dueno de su propia politica de negocio (la cancha y el
-// salon podrian, en el futuro, tener ventanas de anticipacion
-// distintas sin que eso implique tocar el modulo del otro). Mismo
-// valor que cancha (30 dias) porque nadie ha pedido uno distinto
-// todavia -- confirmar con Marvin si el negocio define una ventana
-// propia para el salon.
+// consultar disponibilidad o registrar una reserva. Cada modulo es
+// dueno de su propia politica (la cancha y el salon podrian tener
+// ventanas distintas); mismo valor que cancha (30 dias) mientras el
+// negocio no defina uno propio para el salon.
 const MAX_ADVANCE_BOOKING_DAYS = 30;
 
-// CA-3 de HU-013 (calculo automatico del anticipo): ni la historia de
-// usuario ni sus criterios de aceptacion dicen el porcentaje. Se
-// confirmo con Marvin usar 30% del precio del plan como valor de
-// arranque (16/09/2026), con la salvedad explicita de que el
-// encargado/cliente (Jonathan Rojas Mora) todavia no lo ha validado --
-// igual que paso con MAX_ADVANCE_BOOKING_DAYS en HU-001. Si el negocio
-// define un porcentaje distinto, este es el UNICO lugar que hay que
-// cambiar.
-const EVENT_HALL_DEPOSIT_PERCENTAGE = 0.30;
+// El salon se reserva con anticipacion: como minimo el dia antes (no se puede
+// reservar para hoy). Es el piso de la ventana de anticipacion.
+const MIN_ADVANCE_BOOKING_DAYS = 1;
 
-// HU-007 — Consultar la disponibilidad del salon para una fecha y
-// horario.
+const DAY_TAKEN_MESSAGE = 'El salon ya tiene una reserva ese dia. Se reserva por dia completo para que no se crucen clientes.';
+
+// La fecha (yyyy-mm-dd) debe estar dentro de la ventana de anticipacion: desde
+// MIN_ADVANCE_BOOKING_DAYS (manana) hasta MAX_ADVANCE_BOOKING_DAYS dias.
+function assertBookableDay(window, { pastMessage, farMessage }) {
+  const earliest = new Date();
+  earliest.setHours(0, 0, 0, 0);
+  earliest.setDate(earliest.getDate() + MIN_ADVANCE_BOOKING_DAYS);
+  const maxAllowed = new Date();
+  maxAllowed.setDate(maxAllowed.getDate() + MAX_ADVANCE_BOOKING_DAYS);
+  if (window.dayStart < earliest) throw new DomainError(pastMessage, 422);
+  if (window.start > maxAllowed) throw new DomainError(farMessage, 422);
+}
+
+const TOO_SOON = 'El salon se reserva con al menos un dia de anticipacion: no se puede reservar para hoy ni para fechas que ya pasaron.';
+
+// Conflicto del dia: otra reserva activa que toque ese dia (sin importar la
+// hora, porque el salon se reserva completo) o un bloqueo vigente dentro del
+// horario de la reserva. `excludeBookingId` se usa al modificar.
+async function findDayConflict({ resourceId, window, excludeBookingId, transaction }) {
+  const booking = await Booking.findOne({
+    where: {
+      resourceId,
+      ...buildBookingOverlapWhere({ start: window.dayStart, end: window.dayEnd, excludeBookingId }),
+    },
+    transaction,
+  });
+  const block = booking ? null : await ResourceBlock.findOne({
+    where: { resourceId, ...buildBlockOverlapWhere({ start: window.start, end: window.end }) },
+    transaction,
+  });
+  return { booking, block };
+}
+
+async function findHall(resourceId, transaction) {
+  const resource = await Resource.findOne({
+    where: { resourceId, resourceType: EVENT_HALL_RESOURCE_TYPE },
+    transaction,
+  });
+  if (!resource) throw new DomainError('El salon indicado no existe.', 404);
+  return resource;
+}
+
+// Horario fijo de entrada y salida (lo pide el frontend para mostrarlo).
+function getHallSchedule() {
+  return hallSchedule();
+}
+
+// HU-007 — Consultar la disponibilidad del salon para una fecha.
 //
 // Devuelve { available, reason } en vez de lanzar un error cuando el
 // salon esta ocupado: a diferencia de "registrar" (HU-013), donde un
 // conflicto SI es un error porque la operacion no se puede completar,
-// aqui "no disponible" es una respuesta valida y esperada (CA-2/CA-3),
-// no una falla. Los unicos casos que se lanzan como DomainError son
-// forma-de-negocio invalida (recurso inexistente, CA-4).
-async function checkHallAvailability({ resourceId, startDatetime, endDatetime }) {
-  const start = new Date(startDatetime);
-  const end = new Date(endDatetime);
-
-  if (end <= start) {
-    throw new DomainError('La hora de fin debe ser posterior a la hora de inicio.', 422);
-  }
-
-  const resource = await Resource.findOne({
-    where: { resourceId, resourceType: EVENT_HALL_RESOURCE_TYPE },
-  });
-  if (!resource) {
-    throw new DomainError('El salon indicado no existe.', 404);
-  }
+// aqui "no disponible" es una respuesta valida y esperada (CA-2/CA-3).
+// Los unicos casos que se lanzan como DomainError son forma-de-negocio
+// invalida (recurso inexistente, CA-4).
+async function checkHallAvailability({ resourceId, date }) {
+  const window = hallDayWindow(date);
+  const resource = await findHall(resourceId);
 
   // CA-4: fecha fuera de rango permitido (pasado, o mas de
   // MAX_ADVANCE_BOOKING_DAYS en el futuro).
-  const maxAllowedDate = new Date();
-  maxAllowedDate.setDate(maxAllowedDate.getDate() + MAX_ADVANCE_BOOKING_DAYS);
-  if (start < new Date()) {
-    throw new DomainError('No se puede consultar disponibilidad para una fecha u hora que ya paso.', 422);
-  }
-  if (start > maxAllowedDate) {
-    throw new DomainError(
-      `Solo se puede consultar disponibilidad hasta ${MAX_ADVANCE_BOOKING_DAYS} dias de anticipacion.`,
-      422,
-    );
-  }
+  assertBookableDay(window, {
+    pastMessage: TOO_SOON,
+    farMessage: `Solo se puede consultar disponibilidad hasta ${MAX_ADVANCE_BOOKING_DAYS} dias de anticipacion.`,
+  });
 
   // CA-2: salon no disponible (mantenimiento/inactivo) o bloqueado.
   if (resource.status !== 'available') {
-    return { available: false, reason: 'El salon no esta disponible actualmente (mantenimiento o inactivo).' };
+    return { available: false, reason: 'El salon no esta disponible actualmente (mantenimiento o inactivo).', ...hallSchedule() };
   }
-  const overlappingBlock = await ResourceBlock.findOne({
-    where: { resourceId, ...buildBlockOverlapWhere({ start, end }) },
-  });
-  if (overlappingBlock) {
-    return { available: false, reason: `El salon esta bloqueado en ese horario (${overlappingBlock.reason}).` };
+  const { booking, block } = await findDayConflict({ resourceId, window });
+  if (block) {
+    return { available: false, reason: `El salon esta bloqueado ese dia (${block.reason}).`, ...hallSchedule() };
   }
 
-  // CA-3: horario con solicitud pendiente (o ya reservado). Se
-  // interpreta "solicitud pendiente" en sentido amplio -- cualquier
-  // reserva activa o pendiente que se cruce con el horario consultado,
-  // no solo las que estan literalmente en estado 'pending' -- porque
-  // ni la HU ni los CA distinguen una respuesta distinta para
-  // "pendiente" vs. "ya confirmada"; ambas significan lo mismo para
-  // quien pregunta "¿esta libre?". Queda anotado por si el negocio
-  // pide diferenciarlas mas adelante.
-  const overlappingBooking = await Booking.findOne({
-    where: { resourceId, ...buildBookingOverlapWhere({ start, end }) },
-  });
-  if (overlappingBooking) {
-    const detail = overlappingBooking.status === 'pending'
-      ? 'tiene una solicitud pendiente de aprobacion en ese horario'
-      : 'ya tiene una reserva confirmada en ese horario';
-    return { available: false, reason: `El salon ${detail}.` };
+  // CA-3: dia con solicitud pendiente (o ya reservado). Cualquier reserva
+  // activa o pendiente ese dia deja el salon ocupado.
+  if (booking) {
+    const detail = booking.status === 'pending'
+      ? 'tiene una solicitud pendiente de aprobacion ese dia'
+      : 'ya tiene una reserva confirmada ese dia';
+    return { available: false, reason: `El salon ${detail}.`, ...hallSchedule() };
   }
 
   // CA-1: consulta exitosa, salon disponible.
-  return { available: true, reason: null };
+  return { available: true, reason: null, ...hallSchedule() };
 }
 
-// HU-013 — Registrar la reserva del salon con el plan de precios
-// seleccionado.
+// HU-013 — Registrar la reserva del salon para un dia.
 async function createHallBooking(payload) {
   return sequelize.transaction((transaction) => createHallBookingInTransaction(payload, transaction));
 }
 
 async function createHallBookingInTransaction(payload, transaction) {
   const {
-    resourceId, planId, customerName, customerPhone, startDatetime, endDatetime, extraHours,
-    linkCustomerId, confirmNewCustomer,
+    resourceId, customerName, customerPhone, date, linkCustomerId, confirmNewCustomer,
   } = payload;
+  const window = hallDayWindow(date);
 
-  const start = new Date(startDatetime);
-  const end = new Date(endDatetime);
-
-  if (end <= start) {
-    throw new DomainError('La hora de fin debe ser posterior a la hora de inicio.', 422);
-  }
-  if (start < new Date()) {
-    throw new DomainError('No se pueden registrar reservas en una fecha u hora que ya paso.', 422);
-  }
-
-  const resource = await Resource.findOne({
-    where: { resourceId, resourceType: EVENT_HALL_RESOURCE_TYPE },
-  });
-  if (!resource) {
-    throw new DomainError('El salon indicado no existe.', 404);
-  }
+  const resource = await findHall(resourceId, transaction);
   if (resource.status !== 'available') {
     throw new DomainError('El salon no esta disponible actualmente (mantenimiento o inactivo).', 409);
   }
 
-  // El plan debe existir y pertenecer a ESTE salon: un plan de otro
-  // recurso (si algun dia hay mas de un salon) no deberia poder
-  // asignarse por error.
-  const plan = await EventHallPricingPlan.findOne({ where: { planId, resourceId }, transaction, lock: transaction.LOCK.UPDATE });
-  if (!plan) {
-    throw new DomainError('El plan de precios indicado no existe para este salon.', 404);
-  }
-
-  // Horas extra: si el horario dura mas que el plan, las horas que sobran
-  // deben venir declaradas (y el plan debe admitirlas).
-  const extra = assertExtraHours({ plan, start, end, extraHours });
-
   // CA-4 (limite de anticipacion): misma politica que la consulta de
-  // disponibilidad (HU-007), asi que un horario que HU-007 reporto
-  // como valido sigue siendo valido al registrar.
-  const maxAllowedDate = new Date();
-  maxAllowedDate.setDate(maxAllowedDate.getDate() + MAX_ADVANCE_BOOKING_DAYS);
-  if (start > maxAllowedDate) {
-    throw new DomainError(
-      `No se pueden registrar reservas con mas de ${MAX_ADVANCE_BOOKING_DAYS} dias de anticipacion.`,
-      422,
-    );
-  }
+  // disponibilidad (HU-007), asi que un dia que HU-007 reporto como valido
+  // sigue siendo valido al registrar.
+  assertBookableDay(window, {
+    pastMessage: TOO_SOON,
+    farMessage: `No se pueden registrar reservas con mas de ${MAX_ADVANCE_BOOKING_DAYS} dias de anticipacion.`,
+  });
 
-  // CA-2: conflicto de horario, contra otras reservas y contra
-  // bloqueos vigentes de este salon.
-  const overlappingBooking = await Booking.findOne({
-    where: { resourceId, ...buildBookingOverlapWhere({ start, end }) },
-  });
-  if (overlappingBooking) {
-    throw new DomainError('Ya existe una reserva en ese horario para este salon.', 409);
-  }
-  const overlappingBlock = await ResourceBlock.findOne({
-    where: { resourceId, ...buildBlockOverlapWhere({ start, end }) },
-  });
-  if (overlappingBlock) {
-    throw new DomainError(`El salon esta bloqueado en ese horario (${overlappingBlock.reason}).`, 409);
-  }
+  // CA-2: conflicto del dia, contra otras reservas y contra bloqueos.
+  const { booking: overlappingBooking, block } = await findDayConflict({ resourceId, window, transaction });
+  if (overlappingBooking) throw new DomainError(DAY_TAKEN_MESSAGE, 409);
+  if (block) throw new DomainError(`El salon esta bloqueado ese dia (${block.reason}).`, 409);
 
   // Cliente de la reserva (compartido con cancha, ver
   // services/customerResolution.service.js). Si el telefono ya es de OTRA
@@ -197,56 +165,24 @@ async function createHallBookingInTransaction(payload, transaction) {
     resourceId,
     customerId: customer.customerId,
     originChannel: 'staff',
-    eventHallPlanId: plan.planId,
-    startDatetime: start,
-    endDatetime: end,
-    extraHours: extra,
+    startDatetime: window.start,
+    endDatetime: window.end,
     status: 'active',
   }, { transaction });
-  await recordContractedHallPlan({ bookingId: booking.bookingId, plan, transaction });
 
-  // CA-3: calculo automatico del anticipo. Se redondea a 2 decimales
-  // (moneda) para no arrastrar errores de punto flotante hacia la
-  // factura/pago (HU-073, Sprint 7).
-  // El anticipo se calcula sobre el total: plan + horas extra.
-  const total = totalPrice(plan, extra);
-  const depositAmount = requiredDeposit(total);
-
-  return {
-    booking,
-    plan: mapPlan(plan),
-    extraHours: extra,
-    extraHoursCost: extraHoursCost(plan, extra),
-    totalPrice: total,
-    depositAmount,
-    depositPercentage: EVENT_HALL_DEPOSIT_PERCENTAGE,
-  };
-}
-
-function requiredDeposit(price) {
-  const priceCents = Math.round(Number(price) * 100);
-  return Math.round(priceCents * EVENT_HALL_DEPOSIT_PERCENTAGE) / 100;
-}
-
-function mapPlan(plan) {
-  return {
-    planId: plan.planId, planName: plan.planName, hours: plan.hours, price: Number(plan.price),
-    extraHourPrice: plan.extraHourPrice === null || plan.extraHourPrice === undefined ? null : Number(plan.extraHourPrice),
-  };
+  return { booking, date, ...hallSchedule() };
 }
 
 // HU-014: DTO explicito; nunca exponer credenciales del cliente.
-function mapHallBooking(booking, recordedPlan) {
+function mapHallBooking(booking) {
   const row = typeof booking.get === 'function' ? booking.get({ plain: true }) : booking;
   return {
-    bookingId: row.bookingId, startDatetime: row.startDatetime, endDatetime: row.endDatetime,
+    bookingId: row.bookingId,
+    date: localIsoDate(row.startDatetime),
+    startDatetime: row.startDatetime, endDatetime: row.endDatetime,
     status: row.status, originChannel: row.originChannel,
     resource: row.resource ? { resourceId: row.resource.resourceId, name: row.resource.name } : null,
     customer: row.customer ? { customerId: row.customer.customerId, fullName: row.customer.fullName, phone: row.customer.phone } : null,
-    plan: recordedPlan || row.eventHallPlan ? mapPlan(recordedPlan ?? row.eventHallPlan) : null,
-    // Horas extra contratadas y lo que cuestan (0 si no hay).
-    extraHours: Number(row.extraHours) || 0,
-    extraHoursCost: recordedPlan || row.eventHallPlan ? extraHoursCost(recordedPlan ?? row.eventHallPlan, Number(row.extraHours) || 0) : 0,
   };
 }
 
@@ -254,33 +190,57 @@ function hallBookingIncludes() {
   return [
     { model: Resource, as: 'resource', required: true, where: { resourceType: EVENT_HALL_RESOURCE_TYPE } },
     { model: Customer, as: 'customer', attributes: ['customerId', 'fullName', 'phone'] },
-    { model: EventHallPricingPlan, as: 'eventHallPlan', attributes: ['planId', 'planName', 'hours', 'price', 'extraHourPrice'] },
   ];
 }
 
-async function listHallBookings({ page = 1, pageSize = 20 } = {}) {
+// yyyy-mm-dd -> [inicio, dia siguiente) en HORA LOCAL (mismo criterio que el
+// listado de la cancha: new Date("yyyy-mm-dd") se interpretaria en UTC).
+function localDayRange(isoDate) {
+  const { dayStart, dayEnd } = hallDayWindow(isoDate);
+  return { start: dayStart, end: dayEnd };
+}
+
+// Filtros opcionales del listado (misma semantica que cancha, para que
+// "Reservas del dia" y el archivo semanal funcionen igual en el salon):
+//   date                -> reservas que inician ese dia local
+//   dateFrom/dateBefore -> [dateFrom, dateBefore) por dia local
+function buildHallListWhere({ date, dateFrom, dateBefore, status } = {}) {
+  const where = {};
+  if (status) where.status = status;
+  if (date) {
+    const { start, end } = localDayRange(date);
+    where.startDatetime = { [Op.gte]: start, [Op.lt]: end };
+  } else if (dateFrom || dateBefore) {
+    where.startDatetime = {
+      ...(dateFrom ? { [Op.gte]: localDayRange(dateFrom).start } : {}),
+      ...(dateBefore ? { [Op.lt]: localDayRange(dateBefore).start } : {}),
+    };
+  }
+  return where;
+}
+
+async function listHallBookings({
+  page = 1, pageSize = 20, date, dateFrom, dateBefore, status,
+} = {}) {
   page = Number(page);
   pageSize = Number(pageSize);
   const { rows, count } = await Booking.findAndCountAll({
+    where: buildHallListWhere({ date, dateFrom, dateBefore, status }),
     include: hallBookingIncludes(), distinct: true,
     order: [['startDatetime', 'DESC'], ['bookingId', 'DESC']],
     limit: pageSize, offset: (page - 1) * pageSize,
   });
-  const recordedPlans = await contractedHallPlans(rows);
-  return { items: rows.map((row) => mapHallBooking(row, recordedPlans.get(row.bookingId))), page, pageSize, total: count, totalPages: Math.ceil(count / pageSize) };
+  return { items: rows.map(mapHallBooking), page, pageSize, total: count, totalPages: Math.ceil(count / pageSize) };
 }
 
 async function getHallBooking(bookingId, options = {}) {
   const booking = await Booking.findOne({ where: { bookingId }, include: hallBookingIncludes(), ...options });
   if (!booking) throw new DomainError('La reserva del salon indicada no existe.', 404);
-  const recordedPlan = await contractedHallPlan(booking, booking.eventHallPlan, options.transaction);
-  const result = mapHallBooking(booking, recordedPlan);
-  const plans = await EventHallPricingPlan.findAll({
-    where: { resourceId: result.resource.resourceId }, order: [['planId', 'ASC']], ...options,
-  });
-  return { ...result, availablePlans: plans.map(mapPlan), depositPercentage: EVENT_HALL_DEPOSIT_PERCENTAGE };
+  return { ...mapHallBooking(booking), ...hallSchedule() };
 }
 
+// HU-014: lo unico que se modifica de una reserva del salon es el DIA
+// (la hora de entrada y de salida son siempre las del horario del salon).
 async function updateHallBooking(bookingId, changes = {}) {
   return sequelize.transaction(async (transaction) => {
     const booking = await Booking.findByPk(bookingId, { transaction, lock: transaction.LOCK.UPDATE });
@@ -292,75 +252,22 @@ async function updateHallBooking(bookingId, changes = {}) {
     if (!resource) throw new DomainError('La reserva no pertenece a un salon de eventos.', 404);
     if (booking.status === 'cancelled') throw new DomainError('Una reserva cancelada no puede modificarse.', 409);
     if (resource.status !== 'available') throw new DomainError('El salon no esta disponible actualmente.', 409);
-    // Planes del salon (con bloqueo) para validar la cobertura de horas y
-    // calcular importes. HU-011 conserva las condiciones contratadas hasta
-    // que el usuario selecciona expresamente otro plan.
-    const plans = await EventHallPricingPlan.findAll({
-      where: { resourceId: booking.resourceId }, order: [['planId', 'ASC']],
-      transaction, lock: transaction.LOCK.UPDATE,
+
+    const window = hallDayWindow(changes.date);
+    assertBookableDay(window, {
+      pastMessage: TOO_SOON,
+      farMessage: `El dia debe estar dentro de los proximos ${MAX_ADVANCE_BOOKING_DAYS} dias.`,
     });
-    const previousPlan = await contractedHallPlan(booking, plans.find((plan) => plan.planId === booking.eventHallPlanId), transaction);
-    let nextPlan;
-    if (changes.planId !== undefined) {
-      nextPlan = plans.find((plan) => plan.planId === Number(changes.planId));
-      if (!nextPlan) throw new DomainError('El plan indicado no existe para este salon.', 404);
-    }
-    const currentExtra = parseExtraHours(booking.extraHours);
-    const nextExtra = changes.extraHours !== undefined ? parseExtraHours(changes.extraHours) : currentExtra;
-    let pricing;
-    if (changes.planId !== undefined || changes.extraHours !== undefined) {
-      const pricingPlan = nextPlan ?? previousPlan;
-      if (!previousPlan || !pricingPlan) throw new DomainError('No se puede calcular el anticipo anterior: la reserva no tiene un plan valido.', 409);
-      const nextTotal = totalPrice(pricingPlan, nextExtra);
-      const depositAmount = requiredDeposit(nextTotal);
-      const previousDepositAmount = requiredDeposit(totalPrice(previousPlan, currentExtra));
-      pricing = {
-        price: nextTotal, depositPercentage: EVENT_HALL_DEPOSIT_PERCENTAGE,
-        depositAmount, previousDepositAmount,
-        depositDifference: Math.round((depositAmount - previousDepositAmount) * 100) / 100,
-        ...(nextExtra > 0 && { extraHours: nextExtra, extraHoursCost: extraHoursCost(pricingPlan, nextExtra) }),
-      };
-    }
-    const start = new Date(changes.startDatetime ?? booking.startDatetime);
-    const end = new Date(changes.endDatetime ?? booking.endDatetime);
-    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
-      throw new DomainError('La fecha es invalida o el fin no es posterior al inicio.', 422);
-    }
-    const maxDate = new Date();
-    maxDate.setDate(maxDate.getDate() + MAX_ADVANCE_BOOKING_DAYS);
-    if (start < new Date() || start > maxDate) {
-      throw new DomainError(`El inicio debe ser futuro y estar dentro de los proximos ${MAX_ADVANCE_BOOKING_DAYS} dias.`, 422);
-    }
-    if (await Booking.findOne({ where: {
-      resourceId: booking.resourceId,
-      ...buildBookingOverlapWhere({ start, end, excludeBookingId: booking.bookingId }),
-    }, transaction })) throw new DomainError('Ya existe una reserva en ese horario para este salon.', 409);
-    if (await ResourceBlock.findOne({ where: {
-      resourceId: booking.resourceId, ...buildBlockOverlapWhere({ start, end }),
-    }, transaction })) throw new DomainError('El salon esta bloqueado en ese horario.', 409);
-    // Horas extra: el horario nuevo debe quedar cubierto por el plan (el nuevo
-    // si lo cambian, o el actual) mas las horas extra.
-    const coveringPlan = nextPlan ?? previousPlan;
-    if (coveringPlan) assertExtraHours({ plan: coveringPlan, start, end, extraHours: nextExtra });
-    // CA-4: no hay politica adicional definida para web; conservar origen y estado.
-    booking.startDatetime = start;
-    booking.endDatetime = end;
-    const fields = ['startDatetime', 'endDatetime'];
-    if (nextPlan) {
-      booking.eventHallPlanId = nextPlan.planId;
-      fields.push('eventHallPlanId');
-    }
-    if (changes.extraHours !== undefined) {
-      booking.extraHours = nextExtra;
-      fields.push('extraHours');
-    }
-    await booking.save({ fields, transaction });
-    if (nextPlan) {
-      await recordContractedHallPlan({ bookingId: booking.bookingId, plan: nextPlan, transaction });
-    }
-    const result = await getHallBooking(booking.bookingId, { transaction });
-    // Importes requeridos, no pagos ni saldo financiero.
-    return { ...result, ...(pricing && { pricing }) };
+    const { booking: other, block } = await findDayConflict({
+      resourceId: booking.resourceId, window, excludeBookingId: booking.bookingId, transaction,
+    });
+    if (other) throw new DomainError(DAY_TAKEN_MESSAGE, 409);
+    if (block) throw new DomainError('El salon esta bloqueado ese dia.', 409);
+
+    booking.startDatetime = window.start;
+    booking.endDatetime = window.end;
+    await booking.save({ fields: ['startDatetime', 'endDatetime'], transaction });
+    return getHallBooking(booking.bookingId, { transaction });
   });
 }
 
@@ -394,11 +301,13 @@ async function cancelHallBooking(bookingId, { cancellationReason } = {}) {
 module.exports = {
   cancelHallBooking,
   listHallBookings,
+  buildHallListWhere,
   getHallBooking,
+  getHallSchedule,
   updateHallBooking,
   EVENT_HALL_RESOURCE_TYPE,
   MAX_ADVANCE_BOOKING_DAYS,
-  EVENT_HALL_DEPOSIT_PERCENTAGE,
+  MIN_ADVANCE_BOOKING_DAYS,
   checkHallAvailability,
   createHallBooking,
 };

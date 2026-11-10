@@ -24,7 +24,7 @@ const ESPACIOS = [
     to: '/salon',
     icon: PartyPopper,
     titulo: 'Salón de eventos',
-    detalle: '3 planes · hasta 80 personas',
+    detalle: 'Se reserva por día · entrada 3 p.m., salida 8 p.m.',
   },
   {
     to: '/cabinas',
@@ -51,7 +51,7 @@ function SeleccionarEspacio() {
       <h2 className="mt-4 font-display text-2xl font-semibold text-primary-900">Nueva reserva</h2>
       <p className="mt-1 text-sm text-muted">¿Qué espacio vas a reservar?</p>
       <p className="mt-3 text-xs leading-relaxed text-faint">
-        Cada espacio cobra distinto: la cancha por hora, el salón por plan, la cabina por noche y
+        Cada espacio cobra distinto: la cancha por hora, el salón por día, la cabina por noche y
         la mesa por comensales.
       </p>
 

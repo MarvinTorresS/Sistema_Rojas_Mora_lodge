@@ -1,14 +1,8 @@
 'use strict';
 
 // Validadores de forma para las reservas del salon de eventos
-// (HU-007, HU-013 en Sprint 2 -- Marvin). El CRUD de planes de precio
-// (HU-008, HU-009, HU-010, HU-011, HU-012) vive en un archivo
-// hermano, eventHallPlans.*, que Alison/Wagner agregan a esta misma
-// carpeta cuando les toque: reservas y planes son dos entidades
-// distintas (event_hall_pricing_plans vs. bookings) aunque compartan
-// la misma area funcional "salon", asi que cada una tiene su propio
-// router/validator/service/controller en vez de mezclarse en un solo
-// archivo gigante.
+// (HU-007, HU-013 en Sprint 2 -- Marvin). El salon se reserva por dia:
+// ya no hay planes de precio ni horas extra.
 //
 // Igual que en reservasCancha.validator.js: esto solo valida FORMA,
 // nunca reglas de negocio (eso es del service).
@@ -36,6 +30,14 @@ function handleValidationErrors(req, res, next) {
   return next();
 }
 
+// El salon se reserva por DIA: la unica fecha que llega es yyyy-mm-dd (las
+// horas de entrada y salida las fija el servidor, ver reservasSalon.schedule.util.js).
+const dateRule = (source, field = 'date') => source(field)
+  .exists({ checkFalsy: true }).withMessage('La fecha de la reserva es obligatoria.').bail()
+  .isString().bail()
+  .isDate({ format: 'YYYY-MM-DD', strictMode: true })
+  .withMessage('La fecha debe ser valida con formato yyyy-mm-dd.');
+
 // HU-007 (GET /api/hall-bookings/availability): consultar disponibilidad.
 // Cubre CA-4 "Fecha fuera de rango permitido" en su forma (fecha real,
 // ISO 8601); el rango de dias permitido en si lo valida el service,
@@ -45,29 +47,17 @@ const checkAvailabilityRules = [
     .exists({ checkFalsy: true }).withMessage('Debe indicar el salon (resourceId).')
     .isInt({ min: 1 }).withMessage('resourceId debe ser un numero entero positivo.'),
 
-  query('startDatetime')
-    .exists({ checkFalsy: true }).withMessage('La fecha y hora de inicio son obligatorias.')
-    .isISO8601().withMessage('startDatetime debe ser una fecha valida (formato ISO 8601).'),
-
-  query('endDatetime')
-    .exists({ checkFalsy: true }).withMessage('La fecha y hora de fin son obligatorias.')
-    .isISO8601().withMessage('endDatetime debe ser una fecha valida (formato ISO 8601).'),
+  dateRule(query),
 
   handleValidationErrors,
 ];
 
-// HU-013 (POST /api/hall-bookings): registrar una reserva con plan.
-// Cubre CA-4 "Campos obligatorios incompletos". planId es obligatorio
-// aqui (a diferencia de cancha, que no tiene planes): sin plan no hay
-// como calcular el anticipo (CA-3), que es responsabilidad del service.
+// HU-013 (POST /api/hall-bookings): registrar la reserva de un dia.
+// Cubre CA-4 "Campos obligatorios incompletos".
 const createHallBookingRules = [
   body('resourceId')
     .exists({ checkFalsy: true }).withMessage('Debe indicar el salon (resourceId).')
     .isInt({ min: 1 }).withMessage('resourceId debe ser un numero entero positivo.'),
-
-  body('planId')
-    .exists({ checkFalsy: true }).withMessage('Debe indicar el plan de precios seleccionado (planId).')
-    .isInt({ min: 1 }).withMessage('planId debe ser un numero entero positivo.'),
 
   body('customerName')
     .exists({ checkFalsy: true }).withMessage('El nombre del cliente es obligatorio.')
@@ -82,19 +72,7 @@ const createHallBookingRules = [
     .custom((value) => normalizePhone(value) !== null).withMessage(GUEST_MESSAGES.PHONE)
     .customSanitizer((value) => normalizePhone(value) ?? value),
 
-  body('startDatetime')
-    .exists({ checkFalsy: true }).withMessage('La fecha y hora de inicio son obligatorias.')
-    .isISO8601().withMessage('startDatetime debe ser una fecha valida (formato ISO 8601).'),
-
-  body('endDatetime')
-    .exists({ checkFalsy: true }).withMessage('La fecha y hora de fin son obligatorias.')
-    .isISO8601().withMessage('endDatetime debe ser una fecha valida (formato ISO 8601).'),
-
-  // Horas extra (opcional; sin enviar = 0). Que cuadren con el horario y el
-  // plan lo decide el service.
-  body('extraHours')
-    .optional({ nullable: true })
-    .isInt({ min: 0, max: 24 }).withMessage('Las horas extra deben ser un número entero entre 0 y 24.'),
+  dateRule(body),
 
   // Respuesta del recepcionista al aviso de telefono ya registrado.
   ...customerResolutionRules,
@@ -110,20 +88,21 @@ const bookingIdRules = [
 const listHallBookingsRules = [
   query('page').optional().isInt({ min: 1, max: 1000000 }),
   query('pageSize').optional().isInt({ min: 1, max: 100 }),
+  ...['date', 'dateFrom', 'dateBefore'].map((name) => query(name).optional()
+    .isDate({ format: 'YYYY-MM-DD', strictMode: true })
+    .withMessage(`${name} debe ser una fecha valida con formato yyyy-mm-dd.`)),
+  query('status').optional()
+    .isIn(['pending', 'active', 'rejected', 'checked_in', 'completed', 'cancelled'])
+    .withMessage('status no corresponde a un estado de reserva valido.'),
   handleValidationErrors,
 ];
 
 const updateHallBookingRules = [
   param('bookingId').isInt({ min: 1 }).withMessage('bookingId debe ser un entero positivo.'),
   body().custom((value) => value && typeof value === 'object' && !Array.isArray(value) &&
-    Object.keys(value).length > 0 && Object.keys(value).every((key) => ['planId', 'startDatetime', 'endDatetime', 'extraHours'].includes(key)))
-    .withMessage('Indique plan, inicio, fin u horas extra. Solo se permiten planId, startDatetime, endDatetime y extraHours.'),
-  body('planId').optional().isInt({ min: 1 }).withMessage('planId debe ser un entero positivo.'),
-  body('extraHours').optional().isInt({ min: 0, max: 24 }).withMessage('Las horas extra deben ser un número entero entre 0 y 24.'),
-  ...['startDatetime', 'endDatetime'].map((field) => body(field).optional()
-    .isString().bail().isISO8601({ strict: true, strictSeparator: true }).bail()
-    .custom((value) => /T\d{2}:\d{2}/.test(value) && Number.isFinite(new Date(value).getTime()))
-    .withMessage('Debe indicar una fecha y hora ISO 8601 valida.')),
+    Object.keys(value).every((key) => key === 'date'))
+    .withMessage('Solo se puede modificar la fecha (date) de la reserva.'),
+  dateRule(body),
   handleValidationErrors,
 ];
 

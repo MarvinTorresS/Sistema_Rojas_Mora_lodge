@@ -38,20 +38,17 @@ app.use('/api/field-bookings', require('./modules/reservasCancha/reservasCancha.
 // HU-015).
 app.use('/api/hall-bookings', require('./modules/reservasSalon/reservasSalon.routes'));
 
-// Sprint 2 — reservas del salón (HU-007, HU-013 a HU-015).
-app.use('/api/hall-bookings', require('./modules/reservasSalon/reservasSalon.routes'));
-
 // Sprint 3 (Marvin) — reservas de cabinas (HU-016 a HU-022, HU-127).
 app.use('/api/cabin-bookings', require('./modules/reservasCabina/reservasCabina.routes'));
 
 // Sprint 3 (Marvin) — cabinas como recurso: tarifa por noche (HU-128).
 app.use('/api/cabins', require('./modules/reservasCabina/cabinRate.routes'));
 
-// Sprint 2 — CRUD de planes de precio del salon de eventos (HU-008 a
-// HU-012). HU-010/HU-011/HU-012 implementadas por Wagner; HU-008 y
-// HU-009 (Alison) quedan como TODO dentro del propio router.
-app.use('/api/event-hall-plans', require('./modules/reservasSalon/eventHallPlans.routes'));
-app.use('/api/event-hall-plans', require('./modules/reservasSalon/eventHallPlans.routes'));
+// Sprint 4 (Alison) — restaurante: catalogo de mesas (HU-103, HU-106) y
+// cuentas/consumos (HU-025, HU-030, HU-031). El resto de historias del
+// sprint agregan sus rutas dentro de estos mismos routers.
+app.use('/api/restaurant-tables', require('./modules/restaurante/catalogoMesas.routes'));
+app.use('/api/restaurant-accounts', require('./modules/restaurante/cuentasMesa.routes'));
 
 // --- Manejo de rutas y errores (siempre al final) ---
 app.use(notFoundHandler);

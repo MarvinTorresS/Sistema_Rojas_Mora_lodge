@@ -2,8 +2,7 @@
 
 // Router de las CABINAS como recurso (HU-128: tarifa por noche). Se monta
 // en /api/cabins, aparte de /api/cabin-bookings, porque aqui el sujeto es
-// la cabina y no una reserva (mismo criterio que preve el proyecto para los
-// planes del salon: /api/event-hall-plans junto a /api/hall-bookings).
+// la cabina y no una reserva.
 //
 // TODO (Sprint 5, autenticacion y roles): restringir estas rutas al rol
 // Administrador. Hoy no existe autenticacion; cuando exista, aqui va el

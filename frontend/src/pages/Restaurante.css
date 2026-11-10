@@ -1,0 +1,139 @@
+/* Restaurante (Sprint 4): mismo lenguaje que La Bombonera / Salon.
+   Reutiliza .bombonera y .bmb-* (ReservasCancha.css y ReservasSalon.css);
+   aqui solo van las piezas propias (.rst-*). */
+
+.bmb-restaurante .rst-muted{color:var(--bmb-muted);font-size:12px;line-height:1.7}
+.bmb-restaurante .rst-panel{padding:24px;min-width:0}
+.bmb-restaurante .rst-panel+.rst-panel{margin-top:0}
+.bmb-restaurante .rst-panel h2{font-size:16px;font-weight:600;letter-spacing:-.4px}
+.bmb-restaurante .rst-panel h3{font-size:14px;font-weight:600}
+.bmb-restaurante .rst-panel-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.bmb-restaurante .rst-actions{display:flex;flex-wrap:wrap;gap:8px}
+
+/* Portada */
+.rst-hub{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;list-style:none;margin:0;padding:0}
+.rst-hub-card{display:flex;flex-direction:column;gap:10px;height:100%;padding:24px;transition:transform .2s,border-color .2s,background .2s}
+.rst-hub-card:hover{transform:translateY(-3px);border-color:#b9cf93;background:#fafcf4}
+.rst-hub-card strong{font-size:20px;font-weight:550;letter-spacing:-.6px}
+.rst-hub-card .bmb-kicker{margin-bottom:0}
+.rst-hub-icon{display:grid;place-items:center;height:48px;width:48px;border-radius:14px;background:var(--bmb-green);color:var(--bmb-lime)}
+.rst-hub-go{display:inline-flex;align-items:center;gap:6px;margin-top:auto;padding-top:6px;font-size:12px;font-weight:600;color:var(--bmb-green)}
+
+/* Botones secundarios */
+.bmb-restaurante .rst-ghost,.bmb-restaurante .rst-danger,.bmb-restaurante .rst-primary-danger,.bmb-restaurante .rst-alert button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--bmb-line);border-radius:30px;background:#fff;padding:8px 14px;font-size:11px;font-weight:600;color:var(--bmb-green);transition:background .2s,border-color .2s}
+.bmb-restaurante .rst-ghost:hover:not(:disabled){background:#f0f4e7}
+.bmb-restaurante .rst-danger{color:#9c4c2e}
+.bmb-restaurante .rst-danger:hover:not(:disabled){background:#fcf3ed;border-color:#e8c9b8}
+.bmb-restaurante .rst-ghost:disabled,.bmb-restaurante .rst-danger:disabled{opacity:.45;cursor:not-allowed}
+.bmb-restaurante .rst-table td .rst-ghost,.bmb-restaurante .rst-table td .rst-danger{margin-right:6px}
+.rst-primary-danger{background:#9c4c2e!important;border-color:#9c4c2e!important;color:#fff!important}
+.rst-primary-danger:disabled{opacity:.6;cursor:not-allowed}
+
+/* Mensajes */
+.rst-alert{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;border-radius:12px;background:#fcf3ed;padding:12px 14px;font-size:12px;color:#9c4c2e}
+.rst-alert-text{border-radius:12px;background:#fcf3ed;padding:10px 12px;font-size:12px;line-height:1.6;color:#9c4c2e;margin:12px 0 0}
+.rst-empty,.rst-empty-text{border:1px dashed var(--bmb-line);border-radius:16px;background:#fafcf4;padding:22px;text-align:center;font-size:13px;color:var(--bmb-ink)}
+.rst-empty{display:flex;flex-direction:column;align-items:center;gap:14px}
+.rst-confirm-text{margin-top:18px;font-size:16px;font-weight:550;letter-spacing:-.3px}
+.rst-dialog-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+.rst-dialog-actions button{flex:1;justify-content:center;padding:12px 14px}
+
+/* Resumen y tablas */
+.rst-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:0 0 16px}
+.rst-stats>div{border:1px solid var(--bmb-line);border-radius:14px;background:#fafcf4;padding:12px 14px}
+.rst-stats dt{font-size:10px;letter-spacing:.4px;color:var(--bmb-muted);text-transform:uppercase}
+.rst-stats dd{margin:4px 0 0;font-size:20px;font-weight:550;letter-spacing:-.6px}
+.rst-table-wrap{overflow-x:auto}
+.rst-table,.rst-lines{width:100%;border-collapse:collapse;text-align:left;font-size:13px}
+.rst-table th,.rst-table td,.rst-lines th,.rst-lines td{border-bottom:1px solid var(--bmb-line);padding:11px 8px;vertical-align:middle}
+.rst-table thead th,.rst-lines thead th{font-size:11px;font-weight:600;letter-spacing:.3px;color:var(--bmb-muted);white-space:nowrap}
+.rst-table tbody th,.rst-lines tbody th{font-weight:600}
+.rst-table tbody tr:hover{background:#fafcf4}
+.rst-table tfoot th,.rst-table tfoot td{font-weight:700;border-bottom:0;border-top:2px solid var(--bmb-line)}
+.rst-lines{margin:18px 0 6px;font-size:12px}
+.rst-lines td:last-child,.rst-lines th:last-child{text-align:right}
+.rst-chip{display:inline-block;border-radius:30px;background:#e6f3dc;padding:3px 10px;font-size:10px;font-weight:600;color:#34692a;margin-right:6px}
+.rst-chip.is-bad{background:#fcf3ed;color:#9c4c2e}
+.rst-chip.is-pending{background:#fdf1d8;color:#8a5a12}
+
+/* Menu y pedido por agregar */
+.rst-filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.rst-search{display:flex;align-items:center;gap:8px;flex:1;min-width:180px;border:1px solid var(--bmb-line);border-radius:30px;background:#fff;padding:0 14px;color:var(--bmb-muted)}
+.rst-search input{flex:1;min-width:0;border:0;outline:0;background:transparent;padding:10px 0;font-size:13px;color:var(--bmb-ink)}
+.rst-search:focus-within{border-color:#648e38;box-shadow:0 0 0 3px #d5ee8c80}
+.rst-select select{border:1px solid var(--bmb-line);border-radius:30px;background:#fff;padding:10px 14px;font-size:12px}
+.rst-products{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;list-style:none;margin:0;padding:0}
+.rst-product{display:flex;flex-direction:column;gap:10px;border:1px solid var(--bmb-line);border-radius:16px;background:#fff;padding:14px;transition:border-color .2s,transform .2s}
+.rst-product:hover:not(.is-sold-out){border-color:#88a360;transform:translateY(-2px)}
+.rst-product strong{display:block;font-size:14px;font-weight:600}
+.rst-product small{font-size:10px;color:var(--bmb-muted)}
+.rst-product-meta{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rst-price{font-size:15px;font-weight:550;letter-spacing:-.3px}
+.rst-product .rst-chip{margin-right:0}
+.rst-product>button{display:inline-flex;align-items:center;justify-content:center;gap:6px;margin-top:auto;border-radius:30px;background:var(--bmb-green);padding:9px 12px;font-size:11px;font-weight:600;color:#fff;transition:background .2s}
+.rst-product>button:hover:not(:disabled){background:#173e29}
+.rst-product>button:disabled{background:#edf0e7;color:#a0aa94;cursor:not-allowed}
+.rst-product.is-sold-out{background:repeating-linear-gradient(-45deg,#f4f5f1,#f4f5f1 5px,#f8f9f6 5px,#f8f9f6 10px);color:#8d948a}
+.rst-pending{margin-top:20px;border-top:1px solid var(--bmb-line);padding-top:18px}
+.rst-pending ul{display:flex;flex-direction:column;gap:12px;list-style:none;margin:12px 0 0;padding:0}
+.rst-pending li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:6px 10px}
+.rst-pending li>div:first-child{grid-column:1/-1}
+.rst-pending li .rst-stepper{justify-self:start}
+.rst-pending li strong{display:block;font-size:12px;font-weight:600}
+.rst-pending li small{font-size:10px;color:var(--bmb-muted)}
+.rst-stepper{display:inline-flex;align-items:center;border:1px solid var(--bmb-line);border-radius:30px;background:#fff}
+.rst-stepper button{display:grid;place-items:center;height:30px;width:30px;color:var(--bmb-green)}
+.rst-stepper button:disabled{opacity:.35;cursor:not-allowed}
+.rst-stepper input{width:38px;border:0;background:transparent;text-align:center;font-size:12px;-moz-appearance:textfield}
+.rst-stepper input::-webkit-outer-spin-button,.rst-stepper input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.rst-line-total{min-width:62px;text-align:right;font-size:12px;font-weight:600}
+.rst-remove{display:grid;place-items:center;height:26px;width:26px;border-radius:50%;color:#9c4c2e}
+.rst-remove:hover:not(:disabled){background:#fcf3ed}
+.rst-estimate{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0 0;font-size:11px;color:var(--bmb-muted)}
+.rst-estimate strong{font-size:16px;color:var(--bmb-ink)}
+
+/* Cuentas abiertas y huespedes */
+.rst-accounts,.rst-guests{display:grid;gap:10px;list-style:none;margin:0;padding:0}
+.rst-accounts{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+.rst-accounts button{display:flex;width:100%;flex-direction:column;align-items:flex-start;gap:4px;border:1px solid var(--bmb-line);border-radius:16px;background:#fff;padding:14px;text-align:left;transition:border-color .2s,background .2s,transform .2s}
+.rst-accounts button:hover:not(:disabled){border-color:#88a360;transform:translateY(-2px)}
+.rst-accounts button[aria-pressed=true]{background:var(--bmb-lime);border-color:#bddb75}
+.rst-accounts strong{font-size:15px;font-weight:600}
+.rst-accounts small{font-size:10px;color:var(--bmb-muted)}
+.rst-accounts button>span{margin-top:6px;font-size:14px;font-weight:600}
+.rst-search-form{margin:16px 0}
+.rst-search-form label,.rst-field label{display:block;margin-bottom:6px;font-size:11px;font-weight:600;color:var(--bmb-muted)}
+.rst-search-form>div{display:flex;flex-wrap:wrap;gap:10px}
+.rst-search-form input{flex:1;min-width:200px;border:1px solid var(--bmb-line);border-radius:30px;background:#fff;padding:11px 16px;font-size:13px;outline:0}
+.rst-search-form input:focus{border-color:#648e38;box-shadow:0 0 0 3px #d5ee8c80}
+.rst-search-form .bmb-action{display:inline-flex;align-items:center;gap:6px}
+.rst-guests li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:14px;border:1px solid var(--bmb-line);border-radius:16px;background:#fff;padding:14px 16px}
+.rst-guests li.is-selected{border-color:#88a360;background:#fafcf4}
+.rst-guests strong{display:block;font-size:14px;font-weight:600}
+.rst-guests small{display:block;margin:3px 0 6px;font-size:11px;color:var(--bmb-muted)}
+.rst-guest-balance{text-align:right}
+.rst-guest-balance strong{font-size:15px}
+.rst-guest-actions{display:flex;flex-wrap:wrap;gap:6px}
+.rst-guest-actions button{border:1px solid var(--bmb-line);border-radius:30px;padding:8px 12px;font-size:11px;font-weight:600;color:var(--bmb-green);transition:background .2s}
+.rst-guest-actions button:hover{background:#f0f4e7}
+.rst-field{margin:16px 0 0}
+.rst-field select{width:100%;border:1px solid var(--bmb-line);border-radius:10px;background:#fff;padding:10px 12px;font-size:13px}
+.rst-field small{display:block;margin-top:6px;font-size:10px;line-height:1.6;color:var(--bmb-muted)}
+.rst-print-title{font-size:15px;font-weight:600;margin:0 0 4px}
+.rst-print-meta{margin:0 0 12px;font-size:12px;color:var(--bmb-muted)}
+
+@media(max-width:900px){
+  .rst-guests li{grid-template-columns:1fr}
+  .rst-guest-balance{text-align:left}
+}
+@media(max-width:420px){
+  .bmb-restaurante .rst-panel{padding:18px 14px}
+  .rst-line-total{text-align:left}
+}
+
+/* Comprobante preliminar: al imprimir solo sale el detalle del saldo. */
+@media print{
+  body *{visibility:hidden!important}
+  .rst-print-area,.rst-print-area *{visibility:visible!important}
+  .rst-print-area{position:absolute;left:0;top:0;width:100%;padding:24px;background:#fff}
+}

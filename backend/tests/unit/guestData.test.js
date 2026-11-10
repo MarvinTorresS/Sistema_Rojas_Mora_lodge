@@ -50,11 +50,9 @@ const cabinBody = {
 };
 const hallBody = {
   resourceId: 2,
-  planId: 7,
   customerName: 'Ana Mora',
   customerPhone: '8888-7777',
-  startDatetime: '2030-01-10T09:00:00',
-  endDatetime: '2030-01-10T15:00:00',
+  date: '2030-01-10',
 };
 
 beforeEach(() => {

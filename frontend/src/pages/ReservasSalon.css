@@ -1,0 +1,82 @@
+/* Salon de eventos con el lenguaje visual de la cancha (La Bombonera).
+   Reutiliza las variables y clases .bmb-* de ReservasCancha.css; aqui solo
+   van las piezas propias del salon. Todo cuelga de .bmb-salon / .bombonera
+   para no afectar a otras pantallas. */
+
+.bmb-salon .bmb-intro-side{display:flex;flex-direction:column;align-items:flex-end;gap:12px;text-align:right}
+.bmb-salon .bmb-intro-side>p{color:var(--bmb-muted);font-size:12px;line-height:1.8}
+
+/* Tarjeta de fecha y horario (el salon se reserva por dia) */
+.bmb-salon .bmb-schedule{padding:25px}
+.bmb-salon .bmb-schedule .bmb-step-row{flex-wrap:wrap}
+.bmb-hall-day{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px;align-items:end;margin-top:20px}
+.bmb-hall-times{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bmb-hall-time{display:flex;align-items:center;gap:10px;border:1px dashed var(--bmb-line);border-radius:12px;background:#fafcf4;padding:9px 12px}
+.bmb-hall-time-icon{display:grid;place-items:center;height:30px;width:30px;flex-shrink:0;border-radius:50%;background:#edf3e1;color:var(--bmb-green)}
+.bmb-hall-time small{display:block;font-size:10px;letter-spacing:.3px;color:var(--bmb-muted)}
+.bmb-hall-time strong{display:block;margin-top:2px;font-size:14px;font-weight:600;letter-spacing:-.2px}
+.bmb-hall-note{margin:14px 0 0;font-size:11px;line-height:1.7;color:var(--bmb-muted)}
+.bombonera .bmb-salon-fields input,
+.bmb-salon .bmb-schedule input,
+.bmb-salon .bmb-schedule select{border-color:var(--bmb-line);border-radius:10px;background:#fff}
+.bmb-salon .bmb-schedule input:focus{border-color:#648e38;box-shadow:0 0 0 3px #d5ee8c80}
+.bmb-action{border-radius:30px;background:var(--bmb-green);color:#fff;padding:11px 18px;font-size:12px;font-weight:600;transition:background .2s,transform .2s}
+.bmb-action:hover:not(:disabled){background:#173e29;transform:translateY(-1px)}
+.bmb-action:disabled{opacity:.6;cursor:not-allowed}
+
+/* Resumen lateral */
+.bmb-venue-badge{display:grid;place-items:center;height:58px;width:65px;flex-shrink:0;border-radius:12px;background:var(--bmb-green);color:var(--bmb-lime)}
+.bmb-availability{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px}
+.bmb-pill{display:inline-flex;align-items:center;border-radius:30px;background:#f2f5ea;padding:7px 11px;font-size:10px;font-weight:600;color:#5f7653}
+.bmb-pill.is-ok{background:#e6f3dc;color:#34692a}
+.bmb-pill.is-bad{background:#fcf3ed;color:#9c4c2e}
+.bmb-summary .bmb-availability{margin:4px 0 0;padding-bottom:20px;border-bottom:1px solid var(--bmb-line)}
+.bmb-summary .bmb-continue-spaced{margin-top:20px}
+.bmb-summary .bmb-selection-error{margin-top:12px}
+.bmb-summary dl>div>dt{max-width:55%}
+
+/* Confirmacion */
+.bmb-confirmed{display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center}
+.bmb-confirmed h3{font-size:20px;font-weight:550;letter-spacing:-.5px}
+.bmb-confirmed .bmb-helper{margin:6px 0 0}
+.bmb-check{display:grid;place-items:center;height:48px;width:48px;border-radius:50%;background:var(--bmb-lime);color:var(--bmb-green);font-size:20px;font-weight:700}
+.bmb-receipt{display:flex;width:100%;flex-direction:column;gap:12px;border:1px solid var(--bmb-line);border-radius:16px;background:#fafcf4;padding:16px;text-align:left}
+.bmb-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;font-size:11px;color:var(--bmb-muted)}
+.bmb-row>span:last-child{text-align:right;font-weight:600;color:var(--bmb-ink)}
+.bmb-row.is-emphasis{border-top:1px solid var(--bmb-line);padding-top:12px;font-size:12px;color:var(--bmb-ink)}
+.bmb-row.is-emphasis>span:last-child{font-size:15px}
+.bmb-confirmed .bmb-continue{margin-top:4px}
+
+/* Reservas existentes (mismo trato que el listado de la cancha) */
+.bmb-salon .bmb-lists{padding:20px}
+.bmb-salon .bmb-lists h3{font-weight:600;letter-spacing:-.3px}
+.bmb-salon .bmb-lists table{border-collapse:collapse;font-size:12px}
+.bmb-salon .bmb-lists table th,.bmb-salon .bmb-lists table td{padding:8px 6px}
+.bmb-salon .bmb-lists table td:last-child button{display:block;width:100%;margin:0 0 6px!important;padding:6px 10px;font-size:12px;white-space:nowrap}
+.bmb-salon .bmb-lists table td:last-child button:last-child{margin-bottom:0!important}
+.bmb-salon .bmb-lists thead th{font-size:11px;letter-spacing:.3px;color:var(--bmb-muted);font-weight:600}
+.bmb-salon .bmb-lists tbody tr:hover{background:#fafcf4}
+.bmb-day-item{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--bmb-line);padding-top:12px}
+.bmb-day-item:first-child{border-top:0;padding-top:0}
+.bmb-day-actions{display:flex;gap:8px}
+.bmb-day-actions button{font-size:12px}
+.bmb-chip{display:inline-block;margin-top:6px;border-radius:30px;background:#e6f3dc;padding:3px 9px;font-size:10px;font-weight:600;color:#34692a}
+.bmb-chip.is-pending{background:#fdf1d8;color:#8a5a12}
+.bmb-link-button{font-size:12px;font-weight:600;color:#4f7a35;text-decoration:underline;text-underline-offset:3px}
+
+/* Cuadros de edicion/cancelacion: un poco mas anchos que "Nueva reserva" */
+.bmb-booking-dialog.is-wide{width:min(560px,calc(100% - 32px))}
+.bmb-booking-dialog h4{font-size:15px;font-weight:600}
+.bmb-booking-dialog fieldset{border:0;margin:0;padding:0;min-width:0}
+
+@media(max-width:760px){
+  .bmb-salon .bmb-intro-side{align-items:flex-start;text-align:left}
+  .bmb-salon .bmb-intro-side>p{max-width:none;font-size:11px}
+  .bmb-salon .bmb-schedule{padding:20px}
+  .bmb-hall-day{grid-template-columns:1fr}
+}
+@media(max-width:420px){
+  .bmb-salon .bmb-schedule{padding:19px 12px}
+  .bmb-salon .bmb-lists{padding:14px 10px}
+  .bmb-hall-times{grid-template-columns:1fr}
+}

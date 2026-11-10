@@ -55,11 +55,24 @@ function toFriendlyError(error, fallbackMessage) {
 }
 
 /**
- * HU-007 — Consultar la disponibilidad del salón para una fecha y
- * horario.
+ * Horario fijo de entrada y salida del salón (se reserva por día).
  *
- * @param {{ resourceId: number, startDatetime: string, endDatetime: string }} params
- * @returns {Promise<{ available: boolean, reason: string|null }>}
+ * @returns {Promise<{ checkInTime: string, checkOutTime: string }>} "HH:mm"
+ */
+export async function getHallSchedule() {
+  try {
+    const response = await api.get(`${BASE_PATH}/schedule`);
+    return response.data.data;
+  } catch (error) {
+    throw toFriendlyError(error, 'No se pudo cargar el horario del salón.');
+  }
+}
+
+/**
+ * HU-007 — Consultar la disponibilidad del salón para un día.
+ *
+ * @param {{ resourceId: number, date: string }} params  date: yyyy-mm-dd
+ * @returns {Promise<{ available: boolean, reason: string|null, checkInTime: string, checkOutTime: string }>}
  */
 export async function checkHallAvailability(params) {
   try {
@@ -71,12 +84,11 @@ export async function checkHallAvailability(params) {
 }
 
 /**
- * HU-013 — Registrar la reserva del salón con el plan de precios
- * seleccionado.
+ * HU-013 — Registrar la reserva del salón para un día.
  *
- * @param {{ resourceId: number, planId: number, customerName: string,
- *           customerPhone: string, startDatetime: string, endDatetime: string }} payload
- * @returns {Promise<{ booking: object, plan: object, depositAmount: number, depositPercentage: number }>}
+ * @param {{ resourceId: number, customerName: string, customerPhone: string,
+ *           date: string }} payload  date: yyyy-mm-dd
+ * @returns {Promise<{ booking: object, date: string, checkInTime: string, checkOutTime: string }>}
  */
 export async function createHallBooking(payload) {
   try {

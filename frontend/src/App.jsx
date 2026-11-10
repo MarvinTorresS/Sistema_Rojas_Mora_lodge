@@ -17,11 +17,13 @@ import ReservasSalon from './pages/ReservasSalon.jsx';
 import ReservasCabina from './pages/ReservasCabina.jsx';
 import ExtenderHospedaje from './pages/ExtenderHospedaje.jsx';
 import TarifasCabina from './pages/TarifasCabina.jsx';
-import PlanesSalon from './pages/PlanesSalon.jsx';
 import BuscarReservaCabina from './pages/BuscarReservaCabina.jsx';
-import AdminPlanesSalon from './pages/AdminPlanesSalon.jsx';
 import CheckInCabinas from './pages/CheckInCabinas.jsx';
 import CheckOutCabinas from './pages/CheckOutCabinas.jsx';
+import Restaurante from './pages/Restaurante.jsx';
+import RestauranteMesas from './pages/RestauranteMesas.jsx';
+import RestauranteCuentas from './pages/RestauranteCuentas.jsx';
+import RestauranteHuespedes from './pages/RestauranteHuespedes.jsx';
 
 /**
  * Router principal de la aplicación.
@@ -57,10 +59,6 @@ function App() {
           {/* Sprint 2 — Marvin (HU-007, HU-013) y Kendall (HU-014/HU-015):
               flujo de disponibilidad + registro de reserva del salón. */}
           <Route path="salon" element={<ReservasSalon />} />
-          {/* Preservar el catálogo y ?plan=<id> de HU-008/HU-009.
-              HU-010/HU-011/HU-012 tienen su propio acceso enlazado. */}
-          <Route path="salon/planes" element={<PlanesSalon />} />
-          <Route path="salon/planes/administrar" element={<AdminPlanesSalon />} />
           {/* Sprint 3 — Marvin (HU-016, registro). HU-017 a HU-022 y HU-127
               se suman a esta misma página: no hace falta un
               PantallaPendiente aparte por HU. */}
@@ -72,11 +70,21 @@ function App() {
           {/* HU-018/HU-019 — buscar una reserva de cabina por huésped y modificarla. */}
           <Route path="cabinas/buscar" element={<BuscarReservaCabina key="search" />} />
           <Route path="cabinas/reservas" element={<BuscarReservaCabina key="list" listMode />} />
-          {/* Sprint 4 — Alison */}
+          {/* Sprint 4 — Alison: HU-103/HU-106 (mesas), HU-025 (agregar productos
+              a la cuenta), HU-030/HU-031 (consumo y saldo de huéspedes). Las
+              demás HU del restaurante (HU-023, HU-024, HU-026 a HU-029, HU-102,
+              HU-104, HU-105, HU-107, HU-113 a HU-117) son de otros integrantes
+              y se enlazan a esta misma portada cuando existan. */}
+          <Route path="restaurante" element={<Restaurante />} />
+          <Route path="restaurante/mesas" element={<RestauranteMesas />} />
+          {/* HU-102 (Marvin): formulario de alta de mesa. El botón "Registrar
+              mesa" de HU-103 CA-2 ya apunta aquí. */}
           <Route
-            path="restaurante"
-            element={<PantallaPendiente titulo="Restaurante" huRelacionadas="HU-023 a HU-031" />}
+            path="restaurante/mesas/registrar"
+            element={<PantallaPendiente icon={UtensilsCrossed} titulo="Registrar mesa" huRelacionadas="HU-102" />}
           />
+          <Route path="restaurante/cuentas" element={<RestauranteCuentas />} />
+          <Route path="restaurante/huespedes" element={<RestauranteHuespedes />} />
           {/* Sprint 5 — Marvin */}
           <Route
             path="usuarios"
