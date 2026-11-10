@@ -15,7 +15,9 @@ import {
 
 // Bug corregido el 26/10/2026: si el teléfono ya era de otra persona, la
 // reserva quedaba a nombre de esa persona sin avisar. Ahora el backend
-// responde CUSTOMER_PHONE_CONFLICT y la pantalla pregunta.
+// responde CUSTOMER_PHONE_CONFLICT y la pantalla solo avisa que el teléfono
+// no coincide: no muestra el nombre del otro cliente ni permite usarlo
+// (evita robo de identidad).
 
 vi.mock('../../services/reservasSalonService', () => ({
   listHallBookings: vi.fn(), getHallBooking: vi.fn(), updateHallBooking: vi.fn(), cancelHallBooking: vi.fn(),
@@ -27,40 +29,28 @@ vi.mock('../../services/reservasCanchaService', () => ({
 }));
 
 // Error tal como lo arman los services del frontend a partir del 409.
-function phoneConflictError(existingCustomers = [{ customerId: 4, fullName: 'Juan Pérez Mora' }]) {
-  const error = new Error('Este teléfono ya está registrado a nombre de Juan Pérez Mora.');
+function phoneConflictError() {
+  const error = new Error('El teléfono no coincide con el nombre del cliente. Revisá los datos e intentá de nuevo.');
   error.status = 409;
   error.code = 'CUSTOMER_PHONE_CONFLICT';
-  error.details = { phone: '88887777', existingCustomers };
   return error;
 }
 
 afterEach(cleanup);
 
 describe('CustomerPhoneConflict (componente)', () => {
-  const conflict = {
-    typedName: 'Pedro Soto Vargas',
-    existingCustomers: [{ customerId: 4, fullName: 'Juan Pérez Mora' }, { customerId: 9, fullName: 'Ana Pérez Mora' }],
-  };
-
   it('no pinta nada si no hay conflicto', () => {
-    const { container } = render(<CustomerPhoneConflict conflict={null} onUseExisting={vi.fn()} onRegisterNew={vi.fn()} />);
+    const { container } = render(<CustomerPhoneConflict conflict={null} />);
     expect(container.innerHTML).toBe('');
   });
 
-  it('ofrece usar cada cliente existente o registrar el nombre escrito', () => {
-    const onUseExisting = vi.fn();
-    const onRegisterNew = vi.fn();
-    render(<CustomerPhoneConflict conflict={conflict} onUseExisting={onUseExisting} onRegisterNew={onRegisterNew} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Usar a Ana Pérez Mora' }));
-    expect(onUseExisting).toHaveBeenCalledWith({ customerId: 9, fullName: 'Ana Pérez Mora' });
-    fireEvent.click(screen.getByRole('button', { name: 'Es otra persona: registrar a Pedro Soto Vargas' }));
-    expect(onRegisterNew).toHaveBeenCalledOnce();
-  });
-
-  it('los botones no envían el formulario que lo contiene (type="button")', () => {
-    render(<CustomerPhoneConflict conflict={conflict} onUseExisting={vi.fn()} onRegisterNew={vi.fn()} />);
-    screen.getAllByRole('button').forEach((button) => expect(button.getAttribute('type')).toBe('button'));
+  it('solo avisa que el teléfono no coincide: sin nombres y sin botones', () => {
+    render(<CustomerPhoneConflict conflict={{ message: 'x', existingCustomers: [{ customerId: 4, fullName: 'Juan Pérez Mora' }] }} />);
+    const text = screen.getByRole('alert').textContent;
+    expect(text).toContain('El teléfono no coincide.');
+    expect(text).not.toContain('Juan');
+    expect(text).not.toContain('Pérez');
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 });
 
@@ -88,32 +78,23 @@ describe('Salón (HU-013): teléfono ya registrado con otro nombre', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Registrar reserva' }));
   }
 
-  it('muestra el aviso en vez de un error y, al elegir al cliente existente, reenvía con linkCustomerId', async () => {
-    createHallBooking
-      .mockRejectedValueOnce(phoneConflictError())
-      .mockResolvedValueOnce(created(31));
+  it('muestra solo el aviso "El teléfono no coincide", sin error ni opciones, y no registra la reserva', async () => {
+    createHallBooking.mockRejectedValueOnce(phoneConflictError());
     await fillAndSubmit();
-    fireEvent.click(await screen.findByRole('button', { name: 'Usar a Juan Pérez Mora' }));
-    expect(await screen.findByText('Reserva confirmada')).toBeTruthy();
-    expect(createHallBooking).toHaveBeenLastCalledWith(expect.objectContaining({
-      customerName: 'Pedro Soto Vargas', customerPhone: '88887777', linkCustomerId: 4,
-    }));
-  });
-
-  it('"es otra persona" reenvía con confirmNewCustomer', async () => {
-    createHallBooking.mockRejectedValueOnce(phoneConflictError()).mockResolvedValueOnce(created(32));
-    await fillAndSubmit();
-    fireEvent.click(await screen.findByRole('button', { name: 'Es otra persona: registrar a Pedro Soto Vargas' }));
-    expect(await screen.findByText('Reserva confirmada')).toBeTruthy();
-    expect(createHallBooking).toHaveBeenLastCalledWith(expect.objectContaining({ confirmNewCustomer: true }));
+    expect(await screen.findByText('El teléfono no coincide.')).toBeTruthy();
+    expect(screen.queryByText(/Reserva confirmada/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Usar al cliente|Es otra persona/ })).toBeNull();
+    expect(createHallBooking).toHaveBeenCalledTimes(1);
+    expect(createHallBooking.mock.calls[0][0]).not.toHaveProperty('linkCustomerId');
+    expect(createHallBooking.mock.calls[0][0]).not.toHaveProperty('confirmNewCustomer');
   });
 
   it('cambiar el teléfono quita el aviso (hay que volver a revisar)', async () => {
     createHallBooking.mockRejectedValueOnce(phoneConflictError());
     await fillAndSubmit();
-    await screen.findByRole('button', { name: 'Usar a Juan Pérez Mora' });
+    await screen.findByText('El teléfono no coincide.');
     fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '88886666' } });
-    expect(screen.queryByRole('button', { name: 'Usar a Juan Pérez Mora' })).toBeNull();
+    expect(screen.queryByText('El teléfono no coincide.')).toBeNull();
   });
 });
 
@@ -126,8 +107,8 @@ describe('Cancha (HU-001): teléfono ya registrado con otro nombre', () => {
     filterFieldBookingsByStatus.mockResolvedValue(emptyPage);
   });
 
-  it('pregunta y, al elegir al cliente existente, confirma a nombre de quién quedó la reserva', async () => {
-    createFieldBooking.mockRejectedValueOnce(phoneConflictError()).mockResolvedValueOnce({ bookingId: 70 });
+  it('solo avisa que el teléfono no coincide, sin revelar el nombre ni dejar usar al cliente', async () => {
+    createFieldBooking.mockRejectedValueOnce(phoneConflictError());
     render(<MemoryRouter><ReservasCancha /></MemoryRouter>);
 
     // Mañana, para que ningún horario esté en el pasado.
@@ -143,11 +124,14 @@ describe('Cancha (HU-001): teléfono ya registrado con otro nombre', () => {
     fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '8888-7777' } });
     fireEvent.click(screen.getAllByRole('button', { name: 'Registrar reserva' }).find((button) => button.type === 'submit'));
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Usar a Juan Pérez Mora' }));
-    expect(await screen.findByText('Reserva registrada a nombre de Juan Pérez Mora.')).toBeTruthy();
-    expect(createFieldBooking).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText('El teléfono no coincide.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Usar al cliente|Es otra persona/ })).toBeNull();
+    expect(screen.queryByText(/Reserva registrada/)).toBeNull();
+    expect(createFieldBooking).toHaveBeenCalledTimes(1);
     expect(createFieldBooking.mock.calls[0][0]).not.toHaveProperty('linkCustomerId');
-    expect(createFieldBooking.mock.calls[1][0]).toMatchObject({ customerName: 'Pedro Soto Vargas', linkCustomerId: 4 });
-    expect(createFieldBooking.mock.calls[1][0]).not.toHaveProperty('customerLabel');
+    expect(createFieldBooking.mock.calls[0][0]).not.toHaveProperty('confirmNewCustomer');
+    // Al corregir el teléfono desaparece el aviso.
+    fireEvent.change(screen.getByLabelText('Teléfono'), { target: { value: '8888-6666' } });
+    expect(screen.queryByText('El teléfono no coincide.')).toBeNull();
   });
 });

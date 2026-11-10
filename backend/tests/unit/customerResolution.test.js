@@ -82,39 +82,31 @@ describe('matchCustomerByPhone', () => {
     const error = await matchCustomerByPhone(base).catch((e) => e);
     expect(error.statusCode).toBe(409);
     expect(error.code).toBe(CUSTOMER_PHONE_CONFLICT_CODE);
-    expect(error.message).toMatch(/Juan Pérez Mora/);
-    expect(error.details).toEqual({
-      phone: '88887777',
-      existingCustomers: [{ customerId: 4, fullName: 'Juan Pérez Mora' }],
-    });
+    // No se revela a quien pertenece el numero (evita robo de identidad).
+    expect(error.message).toMatch(/no coincide/);
+    expect(error.message).not.toMatch(/Juan|Pérez/);
+    // Tampoco viaja ningun dato del cliente existente (ni nombre ni id).
+    expect(error.details).toBeUndefined();
   });
 
-  it('"es otra persona" (confirmNewCustomer) -> null: se creara un cliente nuevo', async () => {
+  it('ya no hay forma de usar ni de forzar: linkCustomerId y confirmNewCustomer se ignoran', async () => {
     Customer.findAll.mockResolvedValue([JUAN]);
-    await expect(matchCustomerByPhone({ ...base, confirmNewCustomer: true })).resolves.toBeNull();
+    const forced = await matchCustomerByPhone({ ...base, confirmNewCustomer: true }).catch((e) => e);
+    expect(forced.code).toBe(CUSTOMER_PHONE_CONFLICT_CODE);
+    const linked = await matchCustomerByPhone({ ...base, linkCustomerId: 4 }).catch((e) => e);
+    expect(linked.code).toBe(CUSTOMER_PHONE_CONFLICT_CODE);
   });
 
-  it('"es otra persona" pero con el nombre de un cliente que ya tiene ese telefono -> reutiliza (no duplica)', async () => {
-    Customer.findAll.mockResolvedValue([JUAN, ANA]);
-    const result = await matchCustomerByPhone({ ...base, customerName: 'Ana Perez Mora', confirmNewCustomer: true });
-    expect(result).toBe(ANA);
-  });
-
-  it('"si, es ese cliente" (linkCustomerId) -> devuelve el elegido', async () => {
-    Customer.findAll.mockResolvedValue([JUAN, ANA]);
-    await expect(matchCustomerByPhone({ ...base, linkCustomerId: 9 })).resolves.toBe(ANA);
-  });
-
-  it('linkCustomerId que ya no tiene ese telefono -> vuelve a preguntar con datos frescos', async () => {
-    Customer.findAll.mockResolvedValue([JUAN]);
-    const error = await matchCustomerByPhone({ ...base, linkCustomerId: 77 }).catch((e) => e);
-    expect(error.code).toBe(CUSTOMER_PHONE_CONFLICT_CODE);
-  });
-
-  it('varios clientes con el mismo telefono -> el aviso los lista a todos', async () => {
+  it('varios clientes con el mismo telefono y ninguno con ese nombre -> 409 sin datos', async () => {
     Customer.findAll.mockResolvedValue([JUAN, ANA]);
     const error = await matchCustomerByPhone(base).catch((e) => e);
-    expect(error.details.existingCustomers.map((c) => c.customerId)).toEqual([4, 9]);
+    expect(error.code).toBe(CUSTOMER_PHONE_CONFLICT_CODE);
+    expect(error.details).toBeUndefined();
+  });
+
+  it('varios clientes con el mismo telefono y uno con ese nombre -> reutiliza a ese', async () => {
+    Customer.findAll.mockResolvedValue([JUAN, ANA]);
+    await expect(matchCustomerByPhone({ ...base, customerName: 'Ana Perez Mora' })).resolves.toBe(ANA);
   });
 });
 
@@ -137,11 +129,13 @@ describe('POST /api/field-bookings (cancha, HU-001) con telefono ya registrado',
     Customer.create.mockResolvedValue({ customerId: 12, fullName: 'Pedro Soto Vargas' });
   });
 
-  it('BUG: responde 409 con el cliente existente y NO crea la reserva a nombre de Juan', async () => {
+  it('BUG: responde 409 (telefono no coincide) y NO crea la reserva a nombre de Juan', async () => {
     const response = await request(app).post('/api/field-bookings').send(payload);
     expect(response.status).toBe(409);
     expect(response.body.error.code).toBe('CUSTOMER_PHONE_CONFLICT');
-    expect(response.body.error.details.existingCustomers).toEqual([{ customerId: 4, fullName: 'Juan Pérez Mora' }]);
+    expect(response.body.error.message).toMatch(/no coincide/);
+    expect(response.body.error.details).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toMatch(/Juan|Pérez|customerId/);
     expect(Booking.create).not.toHaveBeenCalled();
     expect(Customer.create).not.toHaveBeenCalled();
   });
@@ -151,8 +145,9 @@ describe('POST /api/field-bookings (cancha, HU-001) con telefono ya registrado',
     expect(Customer.findAll.mock.calls[0][0].where.logic[Op.in]).toEqual(['88887777', '50688887777']);
   });
 
-  it('"es otra persona": crea a Pedro con el mismo telefono y la reserva queda a su nombre', async () => {
-    const response = await request(app).post('/api/field-bookings').send({ ...payload, confirmNewCustomer: true });
+  it('telefono nuevo: crea a Pedro y la reserva queda a su nombre', async () => {
+    Customer.findAll.mockResolvedValue([]);
+    const response = await request(app).post('/api/field-bookings').send(payload);
     expect(response.status).toBe(201);
     expect(Customer.create).toHaveBeenCalledWith(
       { fullName: 'Pedro Soto Vargas', phone: '88887777' },
@@ -161,18 +156,13 @@ describe('POST /api/field-bookings (cancha, HU-001) con telefono ya registrado',
     expect(Booking.create).toHaveBeenCalledWith(expect.objectContaining({ customerId: 12 }));
   });
 
-  it('"si, es ese cliente": la reserva queda ligada a Juan sin crear otro cliente', async () => {
-    const response = await request(app).post('/api/field-bookings').send({ ...payload, linkCustomerId: 4 });
-    expect(response.status).toBe(201);
-    expect(Customer.create).not.toHaveBeenCalled();
-    expect(Booking.create).toHaveBeenCalledWith(expect.objectContaining({ customerId: 4 }));
-  });
-
-  it('rechaza (422) mandar las dos respuestas a la vez', async () => {
-    const response = await request(app).post('/api/field-bookings')
-      .send({ ...payload, linkCustomerId: 4, confirmNewCustomer: true });
-    expect(response.status).toBe(422);
+  it('no se puede ligar al cliente del numero ni forzar uno nuevo: linkCustomerId y confirmNewCustomer se ignoran', async () => {
+    const linked = await request(app).post('/api/field-bookings').send({ ...payload, linkCustomerId: 4 });
+    expect(linked.status).toBe(409);
+    const forced = await request(app).post('/api/field-bookings').send({ ...payload, confirmNewCustomer: true });
+    expect(forced.status).toBe(409);
     expect(Booking.create).not.toHaveBeenCalled();
+    expect(Customer.create).not.toHaveBeenCalled();
   });
 });
 
@@ -195,24 +185,27 @@ describe('POST /api/hall-bookings (salon, HU-013) con telefono ya registrado', (
     Customer.create.mockResolvedValue({ customerId: 13, fullName: 'Pedro Soto Vargas' });
   });
 
-  it('BUG: responde 409 CUSTOMER_PHONE_CONFLICT y no registra la reserva', async () => {
+  it('BUG: responde 409 CUSTOMER_PHONE_CONFLICT (sin revelar de quien es) y no registra la reserva', async () => {
     const response = await request(app).post('/api/hall-bookings').send(payload);
     expect(response.status).toBe(409);
     expect(response.body.error.code).toBe('CUSTOMER_PHONE_CONFLICT');
+    expect(response.body.error.message).toMatch(/no coincide/);
+    expect(JSON.stringify(response.body)).not.toMatch(/Juan|Pérez|customerId/);
     expect(Booking.create).not.toHaveBeenCalled();
   });
 
-  it('"es otra persona": crea el cliente DENTRO de la transaccion de la reserva', async () => {
-    const response = await request(app).post('/api/hall-bookings').send({ ...payload, confirmNewCustomer: true });
+  it('telefono nuevo: crea el cliente DENTRO de la transaccion de la reserva', async () => {
+    Customer.findAll.mockResolvedValue([]);
+    const response = await request(app).post('/api/hall-bookings').send(payload);
     expect(response.status).toBe(201);
     const [, options] = Customer.create.mock.calls[0];
     expect(options.transaction).toBeDefined();
     expect(Booking.create).toHaveBeenCalledWith(expect.objectContaining({ customerId: 13 }), expect.anything());
   });
 
-  it('"si, es ese cliente": usa a Juan', async () => {
-    const response = await request(app).post('/api/hall-bookings').send({ ...payload, linkCustomerId: 4 });
-    expect(response.status).toBe(201);
-    expect(Booking.create).toHaveBeenCalledWith(expect.objectContaining({ customerId: 4 }), expect.anything());
+  it('no se puede ligar al cliente del numero ni forzar uno nuevo (se ignoran linkCustomerId y confirmNewCustomer)', async () => {
+    expect((await request(app).post('/api/hall-bookings').send({ ...payload, linkCustomerId: 4 })).status).toBe(409);
+    expect((await request(app).post('/api/hall-bookings').send({ ...payload, confirmNewCustomer: true })).status).toBe(409);
+    expect(Booking.create).not.toHaveBeenCalled();
   });
 });

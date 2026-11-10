@@ -128,7 +128,7 @@ async function createHallBooking(payload) {
 
 async function createHallBookingInTransaction(payload, transaction) {
   const {
-    resourceId, customerName, customerPhone, date, linkCustomerId, confirmNewCustomer,
+    resourceId, customerName, customerPhone, date,
   } = payload;
   const window = hallDayWindow(date);
 
@@ -152,12 +152,10 @@ async function createHallBookingInTransaction(payload, transaction) {
 
   // Cliente de la reserva (compartido con cancha, ver
   // services/customerResolution.service.js). Si el telefono ya es de OTRA
-  // persona, se corta con un 409 CUSTOMER_PHONE_CONFLICT para que el
-  // recepcionista elija. Ambos pasos van DENTRO de la transaccion: si
-  // crear la reserva falla, el cliente nuevo tambien se deshace.
-  const customer = (await matchCustomerByPhone({
-    customerName, customerPhone, linkCustomerId, confirmNewCustomer, transaction,
-  })) ?? (await createCustomer({ customerName, customerPhone, transaction }));
+  // persona, se corta con un 409 CUSTOMER_PHONE_CONFLICT (telefono no
+  // coincide). Ambos pasos van DENTRO de la transaccion: si crear la reserva
+  // falla, el cliente nuevo tambien se deshace.
+  const customer = (await matchCustomerByPhone({ customerName, customerPhone, transaction })) ?? (await createCustomer({ customerName, customerPhone, transaction }));
 
   // CA-1: registro exitoso. originChannel = 'staff', igual que HU-001:
   // "Como un Administrador o Recepcionista..." -> la reserva nace activa.

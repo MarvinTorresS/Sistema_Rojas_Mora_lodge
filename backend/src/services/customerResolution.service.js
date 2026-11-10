@@ -13,12 +13,13 @@
 //
 //   El telefono NO identifica a una persona (familias y oficinas comparten
 //   numero; la tabla ni siquiera lo marca UNIQUE). Por eso, cuando el
-//   telefono ya existe con OTRO nombre, el sistema ya no decide solo: avisa
-//   con un 409 y el recepcionista elige (mismo patron que el CA-3 de
-//   cabinas con `linkExistingGuest`):
-//     - linkCustomerId:      "si, es ese cliente"  -> se usa el existente.
-//     - confirmNewCustomer:  "es otra persona"     -> se crea uno nuevo
-//                                                     con el mismo telefono.
+//   telefono ya existe con OTRO nombre, la reserva se RECHAZA con un 409 que
+//   solo avisa que el telefono no coincide.
+//
+//   Privacidad (evitar robo de identidad): el aviso NO dice a nombre de quien
+//   esta el telefono y NO se puede "usar" ni ligar al cliente existente (ya no
+//   hay linkCustomerId ni confirmNewCustomer): para reservar hay que escribir
+//   el nombre que corresponde al telefono, o un telefono distinto.
 //
 // Vive en src/services/ (y no en utils/) porque consulta la base de datos;
 // los archivos de utils/ son funciones puras.
@@ -70,22 +71,12 @@ function namesMatch(a, b) {
   return normalizeName(a) === normalizeName(b);
 }
 
-// Datos minimos del cliente existente que viajan al frontend en el 409
-// (no se expone nada mas: correo, cedula, etc. no hacen falta para decidir).
-function toConflictCandidate(customer) {
-  return { customerId: customer.customerId, fullName: customer.fullName };
-}
+// El 409 no lleva NINGUN dato del cliente existente (ni nombre ni id): solo
+// avisa que el telefono no coincide con el nombre escrito.
+const PHONE_MISMATCH_MESSAGE = 'El teléfono no coincide con el nombre del cliente. Revisá los datos e intentá de nuevo.';
 
-function phoneConflictError(customerPhone, customers) {
-  const names = customers.map((customer) => customer.fullName).join(', ');
-  return new DomainError(
-    `Este teléfono ya está registrado a nombre de ${names}. Confirmá si la reserva es para ese cliente o para otra persona.`,
-    409,
-    {
-      code: CUSTOMER_PHONE_CONFLICT_CODE,
-      details: { phone: customerPhone, existingCustomers: customers.map(toConflictCandidate) },
-    },
-  );
+function phoneConflictError() {
+  return new DomainError(PHONE_MISMATCH_MESSAGE, 409, { code: CUSTOMER_PHONE_CONFLICT_CODE });
 }
 
 /**
@@ -98,39 +89,27 @@ function phoneConflictError(customerPhone, customers) {
  * @returns {Promise<object|null>} el cliente existente, o `null` si hay que
  *   crear uno nuevo (con `createCustomer`) cuando la reserva ya sea valida.
  * @throws {DomainError} 409 CUSTOMER_PHONE_CONFLICT si el telefono ya existe
- *   con otro nombre y el recepcionista todavia no eligio que hacer.
+ *   con otro nombre (sin revelar de quien es).
  */
-async function matchCustomerByPhone({
-  customerName, customerPhone, linkCustomerId, confirmNewCustomer, transaction,
-}) {
-  // findAll y no findOne: despues de un "es otra persona" puede haber
-  // VARIOS clientes con el mismo telefono. `customerPhone` ya llega
-  // normalizado a 8 digitos por el validator.
+async function matchCustomerByPhone({ customerName, customerPhone, transaction }) {
+  // findAll y no findOne: puede haber VARIOS clientes con el mismo telefono
+  // (datos viejos). `customerPhone` ya llega normalizado a 8 digitos por el
+  // validator.
   const customers = await Customer.findAll({
     where: buildPhoneLookupWhere(customerPhone),
     order: [['customerId', 'ASC']],
     transaction,
   });
 
-  // Eleccion explicita del recepcionista: "si, es ese cliente".
-  if (linkCustomerId !== undefined && linkCustomerId !== null) {
-    const chosen = customers.find((customer) => customer.customerId === Number(linkCustomerId));
-    // Si el elegido ya no tiene ese telefono (lo cambiaron mientras tanto),
-    // se vuelve a preguntar con los datos frescos en vez de reservar a
-    // nombre de alguien que ya no corresponde.
-    if (!chosen) throw phoneConflictError(customerPhone, customers);
-    return chosen;
-  }
-
-  // Mismo telefono y mismo nombre: es la misma persona, sin preguntar.
+  // Mismo telefono y mismo nombre: es la misma persona.
   const sameName = customers.find((customer) => namesMatch(customer.fullName, customerName));
   if (sameName) return sameName;
 
-  // Telefono nuevo, o el recepcionista ya confirmo que es otra persona.
-  if (customers.length === 0 || confirmNewCustomer === true) return null;
+  // Telefono nuevo: se creara un cliente (createCustomer).
+  if (customers.length === 0) return null;
 
-  // Telefono conocido con otro nombre: no se decide en silencio.
-  throw phoneConflictError(customerPhone, customers);
+  // Telefono conocido con otro nombre: se rechaza, sin decir de quien es.
+  throw phoneConflictError();
 }
 
 /**

@@ -513,13 +513,7 @@ function ReservasCancha() {
     submitBooking();
   }
 
-  // Envía la reserva. `resolution` es la respuesta del recepcionista al
-  // aviso de teléfono ya registrado (vacía en el primer intento):
-  //   { linkCustomerId, customerLabel } -> "es ese cliente"
-  //   { confirmNewCustomer: true }      -> "es otra persona"
-  async function submitBooking(resolution = {}) {
-    const { customerLabel, ...customerChoice } = resolution;
-
+  async function submitBooking() {
     if (formData.selectedHour === null) {
       setFeedback({ status: 'error', message: 'Elegí un horario disponible en la cuadrícula.' });
       return;
@@ -535,7 +529,6 @@ function ReservasCancha() {
         customerPhone: formData.customerPhone,
         startDatetime,
         endDatetime,
-        ...customerChoice,
       });
 
       // La reserva ya quedó en el backend. En vez de agregarla a mano a
@@ -546,14 +539,7 @@ function ReservasCancha() {
       setFormData((prev) => ({ ...INITIAL_FORM, date: prev.date }));
       clearConflict();
       setShowGuestForm(false);
-      // Si se eligió un cliente existente, se dice a nombre de quién quedó
-      // (puede ser distinto de lo que se había escrito).
-      setFeedback({
-        status: 'success',
-        message: customerLabel
-          ? `Reserva registrada a nombre de ${customerLabel}.`
-          : 'Reserva registrada correctamente.',
-      });
+      setFeedback({ status: 'success', message: 'Reserva registrada correctamente.' });
       await loadReservas();
       setListRefreshVersion((value) => value + 1);
     } catch (error) {
@@ -561,9 +547,9 @@ function ReservasCancha() {
       // a partir de los criterios de aceptación CA-2 a CA-5 (conflicto
       // de horario, demasiada anticipación, etc.) — no hace falta
       // interpretar códigos HTTP acá.
-      // Excepción: el teléfono es de otra persona. No es un error del
-      // formulario sino una pregunta, y se muestra con su propio aviso.
-      if (captureConflict(error, formData.customerName.trim())) {
+      // Excepción: el teléfono está registrado con otro nombre. Se muestra
+      // con su propio aviso (sin revelar de quién es el número).
+      if (captureConflict(error)) {
         setFeedback({ status: 'idle', message: '' });
         return;
       }
@@ -959,15 +945,7 @@ function ReservasCancha() {
             </p>
           </div>
 
-          <CustomerPhoneConflict
-            conflict={phoneConflict}
-            disabled={isSubmitting}
-            onUseExisting={(customer) => submitBooking({
-              linkCustomerId: customer.customerId,
-              customerLabel: customer.fullName,
-            })}
-            onRegisterNew={() => submitBooking({ confirmNewCustomer: true })}
-          />
+          <CustomerPhoneConflict conflict={phoneConflict} />
 
           {feedback.status === 'error' && (
             <p className="rounded-lg bg-coral-50 px-3 py-2 text-xs text-coral-600">

@@ -248,11 +248,7 @@ function ReservasSalon() {
     submitBooking();
   }
 
-  // Envía la reserva. `resolution` es la respuesta del recepcionista al
-  // aviso de teléfono ya registrado (vacía en el primer intento):
-  //   { linkCustomerId } -> "es ese cliente"
-  //   { confirmNewCustomer: true } -> "es otra persona"
-  async function submitBooking(resolution = {}) {
+  async function submitBooking() {
     if (confirmation || isSubmittingBooking) return;
     // Campo incompleto: no se envia nada, se avisa cual falta.
     if (missingFields.length > 0) {
@@ -267,7 +263,6 @@ function ReservasSalon() {
         customerName: bookingForm.customerName.trim(),
         customerPhone: normalizePhone(bookingForm.customerPhone) ?? bookingForm.customerPhone.trim(),
         date,
-        ...resolution,
       });
       clearConflict();
       setConfirmation(result);
@@ -279,9 +274,9 @@ function ReservasSalon() {
       // ahora tiene esta reserva.
       setAvailability(IDLE_AVAILABILITY);
     } catch (error) {
-      // El teléfono es de otra persona: no es un error, es una pregunta
-      // que se responde en su propio aviso (dentro del cuadro del cliente).
-      if (captureConflict(error, bookingForm.customerName.trim())) {
+      // El teléfono está registrado con otro nombre: se avisa que no
+      // coincide (sin revelar de quién es), dentro del cuadro del cliente.
+      if (captureConflict(error)) {
         setBookingFeedback({ status: 'idle', message: '' });
         return;
       }
@@ -474,12 +469,7 @@ function ReservasSalon() {
                 </p>
               </div>
 
-              <CustomerPhoneConflict
-                conflict={phoneConflict}
-                disabled={isSubmittingBooking}
-                onUseExisting={(customer) => submitBooking({ linkCustomerId: customer.customerId })}
-                onRegisterNew={() => submitBooking({ confirmNewCustomer: true })}
-              />
+              <CustomerPhoneConflict conflict={phoneConflict} />
 
               {incompleteMessage && (
                 <p role="alert" className="rounded-lg bg-coral-50 px-3 py-2 text-xs text-coral-600">{incompleteMessage}</p>

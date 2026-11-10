@@ -8,7 +8,6 @@
 // nunca reglas de negocio (eso es del service).
 const { body, param, query, validationResult } = require('express-validator');
 const { GUEST_MESSAGES, normalizePhone, isValidName } = require('../../utils/guestData.util');
-const { customerResolutionRules } = require('../../utils/customerResolutionRules.util');
 
 // NOTA (duplicado intencional, no un descuido): esta misma funcion ya
 // existe en reservasCancha.validator.js. Es identica y 100% generica
@@ -73,9 +72,6 @@ const createHallBookingRules = [
     .customSanitizer((value) => normalizePhone(value) ?? value),
 
   dateRule(body),
-
-  // Respuesta del recepcionista al aviso de telefono ya registrado.
-  ...customerResolutionRules,
 
   handleValidationErrors,
 ];

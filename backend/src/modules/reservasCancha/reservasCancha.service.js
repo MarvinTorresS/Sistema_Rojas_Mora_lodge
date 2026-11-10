@@ -75,7 +75,7 @@ async function hasCustomerOverlapOnResource({ customerId, resourceId, start, end
 // validator.
 async function createFieldBooking(payload) {
   const {
-    resourceId, customerName, customerPhone, startDatetime, endDatetime, linkCustomerId, confirmNewCustomer,
+    resourceId, customerName, customerPhone, startDatetime, endDatetime,
   } = payload;
 
   const start = new Date(startDatetime);
@@ -120,11 +120,9 @@ async function createFieldBooking(payload) {
   // Se busca al cliente SIN crearlo todavia: si la reserva se rechaza,
   // no debe quedar un cliente nuevo guardado por un intento fallido.
   // Si el telefono ya es de OTRA persona, aqui se corta con un 409
-  // CUSTOMER_PHONE_CONFLICT para que el recepcionista elija (ver
+  // CUSTOMER_PHONE_CONFLICT (telefono no coincide; ver
   // services/customerResolution.service.js).
-  const existingCustomer = await matchCustomerByPhone({
-    customerName, customerPhone, linkCustomerId, confirmNewCustomer,
-  });
+  const existingCustomer = await matchCustomerByPhone({ customerName, customerPhone });
   if (
     existingCustomer &&
     (await hasCustomerOverlapOnResource({ customerId: existingCustomer.customerId, resourceId, start, end }))

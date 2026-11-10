@@ -56,9 +56,8 @@ export async function searchFieldBookings(params = {}) {
  * @throws {Error} con `.message` ya listo para mostrarle al usuario y
  *   `.details` (opcional) con la lista de campos inválidos, cuando el
  *   backend respondió 422 con detalle de validación (CA-3). Si el teléfono
- *   ya es de otra persona trae `.code = 'CUSTOMER_PHONE_CONFLICT'` y
- *   `.details.existingCustomers`; se reintenta con `linkCustomerId` o
- *   `confirmNewCustomer: true` en el payload.
+ *   ya está registrado con otro nombre trae `.code = 'CUSTOMER_PHONE_CONFLICT'`
+ *   (sin ningún dato del otro cliente): hay que corregir nombre o teléfono.
  */
 export async function createFieldBooking(payload) {
   try {

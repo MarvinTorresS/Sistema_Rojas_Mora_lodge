@@ -14,7 +14,6 @@
 // validator no deberia hacer eso.
 const { body, param, query, validationResult } = require('express-validator');
 const { normalizePhone } = require('../../utils/guestData.util');
-const { customerResolutionRules } = require('../../utils/customerResolutionRules.util');
 
 // Estados de reserva validos para el filtro opcional de HU-002. Misma
 // lista que el ENUM de booking.model.js; se repite aqui (y no se importa
@@ -70,9 +69,6 @@ const createBookingRules = [
   body('endDatetime')
     .exists({ checkFalsy: true }).withMessage('La fecha y hora de fin son obligatorias.')
     .isISO8601().withMessage('endDatetime debe ser una fecha valida (formato ISO 8601).'),
-
-  // Respuesta del recepcionista al aviso de telefono ya registrado.
-  ...customerResolutionRules,
 
   handleValidationErrors,
 ];
