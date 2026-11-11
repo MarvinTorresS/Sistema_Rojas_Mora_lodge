@@ -137,6 +137,9 @@ async function addItemsInTransaction({ account, items, userId = null, transactio
 // subtotal y el consumo acumulado (sin impuestos: el calculo del total con
 // IVA es HU-029).
 async function buildAccountDetail(account, { transaction } = {}) {
+  // Una lectura pública también debe conservar el bloqueo de la cuenta
+  // mientras consulta sus líneas y versión, igual que las escrituras.
+  if (!transaction) return getAccount(account.accountId);
   const [table, lines] = await Promise.all([
     RestaurantTable.findByPk(account.tableId, { transaction }),
     AccountItem.findAll({
@@ -176,9 +179,64 @@ async function addProductsToAccount(accountId, { items, userId = null } = {}) {
 }
 
 async function getAccount(accountId) {
-  const account = await RestaurantAccount.findByPk(accountId);
-  if (!account) throw new DomainError(MESSAGES.ACCOUNT_NOT_FOUND, 404);
-  return buildAccountDetail(account);
+  return sequelize.transaction(async (transaction) => {
+    const account = await RestaurantAccount.findByPk(accountId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!account) throw new DomainError(MESSAGES.ACCOUNT_NOT_FOUND, 404);
+    return buildAccountDetail(account, { transaction });
+  });
+}
+
+// HU-026: el bloqueo serializa las escrituras; la versión detecta una
+// edición basada en un detalle anterior. No se reintenta con otra versión.
+async function updateItemQuantity(accountId, itemId, { quantity, expectedVersion, userId = null } = {}) {
+  if (![accountId, itemId, expectedVersion].every((value) => Number.isSafeInteger(value) && value > 0)
+    || !Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY_PER_LINE) {
+    throw new DomainError('Identificadores, cantidad o versión inválidos.', 422);
+  }
+  return sequelize.transaction(async (transaction) => {
+    const account = await RestaurantAccount.findByPk(accountId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!account) throw new DomainError(MESSAGES.ACCOUNT_NOT_FOUND, 404);
+    assertAccountOpen(account);
+    if (Number(account.version) !== expectedVersion) {
+      throw new DomainError(MESSAGES.ACCOUNT_VERSION_CONFLICT, 409, {
+        code: CODES.ACCOUNT_VERSION_CONFLICT,
+        details: { expectedVersion, currentVersion: Number(account.version) },
+      });
+    }
+    const item = await AccountItem.findOne({
+      where: { itemId, accountId }, transaction, lock: transaction.LOCK.UPDATE,
+    });
+    if (!item || item.accountId !== accountId) throw new DomainError(MESSAGES.ITEM_NOT_FOUND, 404);
+    if (item.isRemoved) throw new DomainError(MESSAGES.ITEM_REMOVED, 409, { code: CODES.ITEM_REMOVED });
+    if (item.kitchenStatus !== 'pending') {
+      throw new DomainError(MESSAGES.ITEM_ALREADY_SENT, 409, { code: CODES.ITEM_ALREADY_SENT });
+    }
+    const product = await Product.findByPk(item.productId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!product) throw new DomainError(MESSAGES.PRODUCT_NOT_FOUND, 404);
+    const previousQuantity = Number(item.quantity);
+    const difference = quantity - previousQuantity;
+    if (difference === 0) return buildAccountDetail(account, { transaction });
+    const stock = Number(product.stockQuantity) || 0;
+    const details = { productId: product.productId, productName: product.name, available: Math.max(stock, 0) };
+    if (difference > 0) {
+      if (stock <= 0) throw new DomainError(MESSAGES.PRODUCT_OUT_OF_STOCK, 409, { code: CODES.PRODUCT_OUT_OF_STOCK, details });
+      if (product.isAvailable === false) throw new DomainError(MESSAGES.PRODUCT_UNAVAILABLE, 409, { code: CODES.PRODUCT_UNAVAILABLE, details });
+      if (difference > stock) {
+        throw new DomainError(`Solo quedan ${stock} unidades de "${product.name}". Reduzca la cantidad solicitada.`, 409, {
+          code: CODES.INSUFFICIENT_STOCK, details,
+        });
+      }
+    }
+    await item.update({ quantity }, { transaction });
+    const remaining = stock - difference;
+    await product.update({ stockQuantity: remaining, ...(remaining <= 0 ? { isAvailable: false } : {}) }, { transaction });
+    await RestaurantAccount.increment('version', { by: 1, where: { accountId }, transaction });
+    await AuditLog.create({
+      userId, action: 'restaurant_item_quantity_updated', entityType: 'restaurant_account', entityId: accountId,
+      details: JSON.stringify({ accountId, itemId, productId: item.productId, previousQuantity, quantity, difference }),
+    }, { transaction });
+    return buildAccountDetail(account, { transaction });
+  });
 }
 
 // Cuentas abiertas (las que aceptan consumos), con su consumo acumulado.
@@ -223,6 +281,7 @@ async function listOrderMenu() {
 }
 
 module.exports = {
+  updateItemQuantity,
   normalizeRequestedItems,
   addItemsInTransaction,
   buildAccountDetail,

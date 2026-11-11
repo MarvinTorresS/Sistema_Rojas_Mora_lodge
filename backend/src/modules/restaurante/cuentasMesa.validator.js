@@ -24,6 +24,21 @@ const accountIdRules = [
   handleValidationErrors,
 ];
 
+const updateItemQuantityRules = [
+  param('accountId').isInt({ min: 1 }).withMessage('El identificador de la cuenta debe ser un entero positivo.'),
+  param('itemId').isInt({ min: 1 }).withMessage('El identificador de la línea debe ser un entero positivo.'),
+  body().custom((value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).every((key) => ['quantity', 'expectedVersion', 'userId'].includes(key)))
+    .withMessage('Envíe un objeto con cantidad, versión y, opcionalmente, usuario de auditoría; no se admiten otros campos.'),
+  body('quantity').custom((value) => Number.isInteger(value) && value >= 1 && value <= MAX_QUANTITY_PER_LINE)
+    .withMessage(`La cantidad debe ser un entero entre 1 y ${MAX_QUANTITY_PER_LINE}.`),
+  body('expectedVersion').custom((value) => Number.isSafeInteger(value) && value >= 1)
+    .withMessage('La versión esperada debe ser un entero positivo.'),
+  body('userId').optional().custom((value) => Number.isSafeInteger(value) && value >= 1)
+    .withMessage('El usuario debe ser un entero positivo.'),
+  handleValidationErrors,
+];
+
 // HU-030: busqueda de huesped (numero de cabina o nombre de la reserva).
 const searchGuestsRules = [
   query('q').exists({ checkFalsy: true }).withMessage('Indique el número de cabina o el nombre de la reserva.').bail()
@@ -52,5 +67,6 @@ const guestBalanceRules = [
 ];
 
 module.exports = {
+  updateItemQuantityRules,
   addItemsRules, accountIdRules, searchGuestsRules, guestConsumptionRules, guestBalanceRules,
 };

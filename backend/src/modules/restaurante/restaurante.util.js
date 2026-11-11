@@ -9,6 +9,10 @@
 // El frontend decide con el `code` del error, nunca comparando el texto.
 
 const MESSAGES = {
+  ACCOUNT_VERSION_CONFLICT: 'La cuenta cambió desde que la consultó. Recargue la cuenta antes de volver a editar.',
+  ITEM_NOT_FOUND: 'La línea indicada no existe en esta cuenta.',
+  ITEM_REMOVED: 'El producto fue retirado de la cuenta y no admite cambios.',
+  ITEM_ALREADY_SENT: 'El producto ya fue enviado a cocina y no se puede modificar. Agregue una nueva línea para solicitar más unidades.',
   // HU-106
   TABLE_NOT_FOUND: 'La mesa indicada no existe.',
   TABLE_ALREADY_INACTIVE: 'La mesa ya se encuentra inactiva',
@@ -31,6 +35,9 @@ const MESSAGES = {
 
 // Codigos estables que el frontend usa para reaccionar sin leer el texto.
 const CODES = {
+  ACCOUNT_VERSION_CONFLICT: 'ACCOUNT_VERSION_CONFLICT',
+  ITEM_REMOVED: 'ITEM_REMOVED',
+  ITEM_ALREADY_SENT: 'ITEM_ALREADY_SENT',
   TABLE_ALREADY_INACTIVE: 'TABLE_ALREADY_INACTIVE',
   TABLE_HAS_OPEN_ACCOUNT: 'TABLE_HAS_OPEN_ACCOUNT',
   ACCOUNT_CLOSED: 'ACCOUNT_CLOSED',

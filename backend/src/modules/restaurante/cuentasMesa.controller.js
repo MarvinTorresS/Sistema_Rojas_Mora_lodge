@@ -41,6 +41,17 @@ async function searchGuests(req, res, next) {
   } catch (error) { return next(error); }
 }
 
+async function updateItemQuantity(req, res, next) {
+  try {
+    const data = await pedido.updateItemQuantity(Number(req.params.accountId), Number(req.params.itemId), {
+      quantity: req.body.quantity,
+      expectedVersion: req.body.expectedVersion,
+      userId: actingUserId(req),
+    });
+    return res.json({ data });
+  } catch (error) { return next(error); }
+}
+
 async function registerGuestConsumption(req, res, next) {
   try {
     const { bookingId, cabin, guestName, tableId, items } = req.body;
@@ -62,5 +73,6 @@ async function getGuestBalance(req, res, next) {
 }
 
 module.exports = {
+  updateItemQuantity,
   listOpenAccounts, listMenu, getAccount, addItems, searchGuests, registerGuestConsumption, getGuestBalance,
 };

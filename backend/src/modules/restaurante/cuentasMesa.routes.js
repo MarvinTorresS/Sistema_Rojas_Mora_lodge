@@ -10,6 +10,7 @@
 const express = require('express');
 const controller = require('./cuentasMesa.controller');
 const {
+  updateItemQuantityRules,
   addItemsRules, accountIdRules, searchGuestsRules, guestConsumptionRules, guestBalanceRules,
 } = require('./cuentasMesa.validator');
 
@@ -34,5 +35,7 @@ router.get('/:accountId', accountIdRules, controller.getAccount);
 
 // HU-025 (Alison) - Agregar productos al pedido de una cuenta activa.
 router.post('/:accountId/items', addItemsRules, controller.addItems);
+
+router.patch('/:accountId/items/:itemId', updateItemQuantityRules, controller.updateItemQuantity);
 
 module.exports = router;

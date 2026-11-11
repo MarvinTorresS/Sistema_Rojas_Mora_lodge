@@ -76,6 +76,16 @@ export function addProductsToAccount(accountId, items) {
   );
 }
 
+// HU-026: userId es metadato temporal de auditoría, como en HU-025.
+export function updateItemQuantity(accountId, itemId, { quantity, expectedVersion }) {
+  return request(
+    async () => (await api.patch(`${ACCOUNTS_PATH}/${accountId}/items/${itemId}`, {
+      quantity, expectedVersion, userId: RESTAURANT_USER_ID,
+    })).data.data,
+    'No se pudo modificar la cantidad.',
+  );
+}
+
 // HU-030 / HU-031
 export function searchGuests(q) {
   return request(async () => (await api.get(`${ACCOUNTS_PATH}/guests`, { params: { q } })).data, 'No se pudo buscar al huésped.');
