@@ -11,7 +11,7 @@ const express = require('express');
 const controller = require('./cuentasMesa.controller');
 const {
   openAccountRules,
-  updateItemQuantityRules,
+  updateItemQuantityRules, removeAccountItemRules,
   addItemsRules, accountIdRules, searchGuestsRules, guestConsumptionRules, guestBalanceRules,
 } = require('./cuentasMesa.validator');
 
@@ -42,5 +42,7 @@ router.get('/:accountId', accountIdRules, controller.getAccount);
 router.post('/:accountId/items', addItemsRules, controller.addItems);
 
 router.patch('/:accountId/items/:itemId', updateItemQuantityRules, controller.updateItemQuantity);
+
+router.post('/:accountId/items/:itemId/remove', removeAccountItemRules, controller.removeAccountItem);
 
 module.exports = router;

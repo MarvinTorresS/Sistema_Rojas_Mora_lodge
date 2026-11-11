@@ -54,6 +54,17 @@ async function updateItemQuantity(req, res, next) {
   } catch (error) { return next(error); }
 }
 
+async function removeAccountItem(req, res, next) {
+  try {
+    const data = await pedido.removeAccountItem(Number(req.params.accountId), Number(req.params.itemId), {
+      removedReason: req.body.removedReason,
+      expectedVersion: req.body.expectedVersion,
+      userId: actingUserId(req),
+    });
+    return res.json({ data });
+  } catch (error) { return next(error); }
+}
+
 async function registerGuestConsumption(req, res, next) {
   try {
     const { bookingId, cabin, guestName, tableId, items } = req.body;
@@ -87,6 +98,7 @@ async function openAccount(req, res, next) {
 }
 
 module.exports = {
+  removeAccountItem,
   openAccount,
   updateItemQuantity,
   listOpenAccounts, listMenu, getAccount, addItems, searchGuests, registerGuestConsumption, getGuestBalance,

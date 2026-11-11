@@ -239,6 +239,48 @@ async function updateItemQuantity(accountId, itemId, { quantity, expectedVersion
   });
 }
 
+// HU-027: retiro lógico y devolución única dentro de la misma transacción.
+async function removeAccountItem(accountId, itemId, { expectedVersion, removedReason = null, userId = null } = {}) {
+  if (![accountId, itemId, expectedVersion].every((value) => Number.isSafeInteger(value) && value > 0)
+    || (removedReason !== null && (typeof removedReason !== 'string' || removedReason.length > 200))
+    || (userId !== null && (!Number.isSafeInteger(userId) || userId < 1))) {
+    throw new DomainError('Identificadores, motivo o versión inválidos.', 422);
+  }
+  return sequelize.transaction(async (transaction) => {
+    const account = await RestaurantAccount.findByPk(accountId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!account) throw new DomainError(MESSAGES.ACCOUNT_NOT_FOUND, 404);
+    assertAccountOpen(account);
+    if (Number(account.version) !== expectedVersion) {
+      throw new DomainError(MESSAGES.ACCOUNT_VERSION_CONFLICT, 409, {
+        code: CODES.ACCOUNT_VERSION_CONFLICT,
+        details: { expectedVersion, currentVersion: Number(account.version) },
+      });
+    }
+    const item = await AccountItem.findOne({
+      where: { itemId, accountId }, transaction, lock: transaction.LOCK.UPDATE,
+    });
+    if (!item || item.accountId !== accountId) throw new DomainError(MESSAGES.ITEM_NOT_FOUND, 404);
+    if (item.isRemoved) throw new DomainError(MESSAGES.ITEM_REMOVED, 409, { code: CODES.ITEM_REMOVED });
+    if (item.kitchenStatus !== 'pending') {
+      throw new DomainError('El producto ya fue enviado a cocina y no se puede retirar.', 409, { code: CODES.ITEM_ALREADY_SENT });
+    }
+    const product = await Product.findByPk(item.productId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!product) throw new DomainError(MESSAGES.PRODUCT_NOT_FOUND, 404);
+    await item.update({
+      isRemoved: true, removedAt: new Date(), removedByUserId: userId,
+      removedReason: removedReason?.trim() || null,
+    }, { transaction });
+    await product.update({ stockQuantity: Number(product.stockQuantity) + Number(item.quantity) }, { transaction });
+    await RestaurantAccount.increment('version', { by: 1, where: { accountId }, transaction });
+    await AuditLog.create({
+      userId, action: 'restaurant_item_removed', entityType: 'restaurant_account', entityId: accountId,
+      details: JSON.stringify({ accountId, itemId, productId: item.productId,
+        quantity: item.quantity, unitPrice: item.unitPrice, removedReason: removedReason?.trim() || null }),
+    }, { transaction });
+    return buildAccountDetail(account, { transaction });
+  });
+}
+
 // Cuentas abiertas (las que aceptan consumos), con su consumo acumulado.
 async function listOpenAccounts() {
   const accounts = await RestaurantAccount.findAll({
@@ -281,6 +323,7 @@ async function listOrderMenu() {
 }
 
 module.exports = {
+  removeAccountItem,
   updateItemQuantity,
   normalizeRequestedItems,
   addItemsInTransaction,

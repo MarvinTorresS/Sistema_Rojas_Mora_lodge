@@ -4,7 +4,7 @@ import { RotateCcw } from 'lucide-react';
 import EncabezadoRestaurante from '../components/restaurante/EncabezadoRestaurante';
 import { PedidoPendiente, SelectorProductos } from '../components/restaurante/ProductosPedido';
 import {
-  addProductsToAccount, getAccount, listOpenAccounts, listOrderMenu, updateItemQuantity,
+  addProductsToAccount, getAccount, listOpenAccounts, listOrderMenu, updateItemQuantity, removeAccountItem,
 } from '../services/restauranteService';
 import { formatDateTime, money, toRequestItems, MAX_QUANTITY_PER_LINE } from '../utils/restaurante';
 import './ReservasCancha.css';
@@ -29,6 +29,7 @@ export default function RestauranteCuentas() {
   const [pending, setPending] = useState([]);
   const [submit, setSubmit] = useState({ status: 'idle', message: '' });
   const [notice, setNotice] = useState('');
+  const [removing, setRemoving] = useState(null);
   const [editing, setEditing] = useState(null);
   const [editResult, setEditResult] = useState({ status: 'idle', message: '', needsReload: false });
   const sending = useRef(false);
@@ -75,6 +76,7 @@ export default function RestauranteCuentas() {
     if (sending.current) return;
     const id = ++detailRequest.current;
     setSelectedId(accountId);
+    setRemoving(null);
     setEditing(null);
     setEditResult({ status: 'idle', message: '', needsReload: false });
     setPending([]);
@@ -90,7 +92,7 @@ export default function RestauranteCuentas() {
   }
 
   async function addToAccount() {
-    if (sending.current || editing || editResult.needsReload || pending.length === 0 || !selectedId) return;
+    if (sending.current || editing || removing || editResult.needsReload || pending.length === 0 || !selectedId) return;
     sending.current = true;
     setSubmit({ status: 'loading', message: '' });
     setNotice('');
@@ -122,6 +124,7 @@ export default function RestauranteCuentas() {
       const data = await getAccount(selectedId);
       setDetail({ status: 'success', data, message: '' });
       setEditing(null);
+      setRemoving(null);
       setEditResult({ status: 'idle', message: '', needsReload: false });
       loadAccounts();
       loadMenu({ preserveDraft: true });
@@ -144,6 +147,7 @@ export default function RestauranteCuentas() {
       const updated = await updateItemQuantity(selectedId, editing.itemId, { quantity, expectedVersion: editing.expectedVersion });
       setDetail({ status: 'success', data: updated, message: '' });
       setEditing(null);
+      setRemoving(null);
       setEditResult({ status: 'idle', message: '', needsReload: false });
       setNotice('Cantidad actualizada correctamente.');
       loadAccounts();
@@ -162,6 +166,29 @@ export default function RestauranteCuentas() {
           setEditResult({ status: 'error', message: `${error.message} ${refreshError.message}`, needsReload: true });
         }
       }
+    } finally { sending.current = false; }
+  }
+
+  async function confirmRemoval() {
+    if (sending.current || !removing || editResult.needsReload) return;
+    sending.current = true;
+    setEditResult({ status: 'loading', message: '', needsReload: false });
+    setNotice('');
+    try {
+      const updated = await removeAccountItem(selectedId, removing.itemId, {
+        expectedVersion: removing.expectedVersion, removedReason: removing.reason,
+      });
+      setDetail({ status: 'success', data: updated, message: '' });
+      setRemoving(null);
+      setEditResult({ status: 'idle', message: '', needsReload: false });
+      setNotice('Producto retirado correctamente.');
+      loadAccounts();
+      loadMenu({ preserveDraft: true });
+    } catch (error) {
+      const needsReload = ['ACCOUNT_VERSION_CONFLICT', 'ACCOUNT_CLOSED', 'ITEM_ALREADY_SENT', 'ITEM_REMOVED'].includes(error.code)
+        || error.status === 404;
+      setEditResult({ status: 'error', message: error.message, needsReload });
+      if (error.code === 'ACCOUNT_CLOSED') loadAccounts();
     } finally { sending.current = false; }
   }
 
@@ -287,15 +314,24 @@ export default function RestauranteCuentas() {
                                 }}>Cancelar edición</button>
                               </>
                             ) : account.status === 'open' && line.kitchenStatus === 'pending' ? (
+                              <>
                               <button type="button" className="rst-ghost" aria-label={`Editar cantidad de ${line.name}, línea ${line.itemId}`}
-                                disabled={sendingNow || Boolean(editing) || editResult.needsReload}
+                                disabled={sendingNow || Boolean(editing) || Boolean(removing) || editResult.needsReload}
                                 onClick={() => {
                                   setEditing({ itemId: line.itemId, quantity: String(line.quantity), expectedVersion: account.version });
                                   setEditResult({ status: 'idle', message: '', needsReload: false });
                                   setNotice('');
                                 }}>Editar cantidad</button>
+                              <button type="button" className="rst-ghost" aria-label={`Retirar ${line.name}, línea ${line.itemId}`}
+                                disabled={sendingNow || Boolean(editing) || Boolean(removing) || editResult.needsReload}
+                                onClick={() => {
+                                  setRemoving({ itemId: line.itemId, name: line.name, expectedVersion: account.version, reason: '' });
+                                  setEditResult({ status: 'idle', message: '', needsReload: false });
+                                  setNotice('');
+                                }}>Retirar</button>
+                              </>
                             ) : ['sent', 'preparing', 'served'].includes(line.kitchenStatus) ? (
-                              <small>Enviado a cocina; no se puede modificar.</small>
+                              <small><span>Enviado a cocina; no se puede modificar.</span><br />No se puede retirar.</small>
                             ) : null}
                           </td>
                         </tr>
@@ -303,6 +339,22 @@ export default function RestauranteCuentas() {
                     </tbody>
                   </table>
                   </div>
+                )}
+
+                {removing && (
+                  <section role="dialog" aria-labelledby="remove-item-title" className="rst-panel">
+                    <h3 id="remove-item-title">Confirmar retiro del producto</h3>
+                    <p>¿Retirar {removing.name} de la cuenta? Se devolverán sus existencias.</p>
+                    <label>Motivo (opcional)
+                      <input maxLength={200} value={removing.reason} disabled={sendingNow || editResult.needsReload}
+                        onChange={(event) => setRemoving({ ...removing, reason: event.target.value })} />
+                    </label>
+                    <button type="button" onClick={confirmRemoval} disabled={sendingNow || editResult.needsReload}>Confirmar retiro</button>
+                    <button type="button" disabled={sendingNow} onClick={() => {
+                      setRemoving(null);
+                      if (!editResult.needsReload) setEditResult({ status: 'idle', message: '', needsReload: false });
+                    }}>Volver</button>
+                  </section>
                 )}
 
                 <div className="bmb-total" aria-live="polite">
@@ -316,7 +368,7 @@ export default function RestauranteCuentas() {
                       {submit.message}{submit.productName ? ` (${submit.productName})` : ''}
                     </p>
                   )}
-                  <button type="button" className="bmb-continue" disabled={pending.length === 0 || sendingNow || Boolean(editing) || editResult.needsReload || account.status !== 'open'} onClick={addToAccount}>
+                  <button type="button" className="bmb-continue" disabled={pending.length === 0 || sendingNow || Boolean(editing) || Boolean(removing) || editResult.needsReload || account.status !== 'open'} onClick={addToAccount}>
                     <span>{submit.status === 'loading' ? 'Agregando…' : 'Agregar a la cuenta'}</span>
                   </button>
                 </PedidoPendiente>

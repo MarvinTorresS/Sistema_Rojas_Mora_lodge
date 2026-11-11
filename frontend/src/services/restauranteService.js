@@ -133,3 +133,13 @@ export function getGuestBalance(bookingId) {
     'No se pudo consultar el saldo del huésped.',
   );
 }
+
+// HU-027: retiro lógico; el servidor devuelve la cuenta y su nueva versión.
+export function removeAccountItem(accountId, itemId, { expectedVersion, removedReason }) {
+  return request(
+    async () => (await api.post(`${ACCOUNTS_PATH}/${accountId}/items/${itemId}/remove`, {
+      expectedVersion, ...(removedReason ? { removedReason } : {}), userId: RESTAURANT_USER_ID,
+    })).data.data,
+    'No se pudo retirar el producto.',
+  );
+}
