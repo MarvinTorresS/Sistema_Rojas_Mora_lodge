@@ -7,7 +7,9 @@
 // Esta capa no sabe nada de HTTP: recibe datos ya validados en su forma y
 // lanza DomainError (con statusCode y code) cuando una regla de NEGOCIO
 // falla. Mismo patron que reservasCancha.service.js.
-const { RestaurantTable, RestaurantAccount, AuditLog, sequelize } = require('../../models');
+const { RestaurantTable, RestaurantAccount, Resource, Booking, ResourceBlock,
+  CabinDetail, EventHallPricingPlan, FieldRate, AuditLog, sequelize } = require('../../models');
+const { verifyTableAdministrator } = require('./tableAdminApproval.service');
 const { DomainError } = require('../../utils/domainError.util');
 const {
   MESSAGES, CODES, compareTableNumbers, mapTable,
@@ -36,6 +38,57 @@ async function listTables() {
   };
 }
 
+// Resource antes de RestaurantTable: mismo orden que los flujos de reservas.
+// Las lecturas bloqueantes son actuales aunque MySQL use REPEATABLE READ.
+async function lockTableResource(tableId, transaction) {
+  const hint = await RestaurantTable.findByPk(tableId, { transaction });
+  if (!hint) throw new DomainError(MESSAGES.TABLE_NOT_FOUND, 404);
+  const resource = await Resource.findByPk(hint.resourceId, { transaction, lock: transaction.LOCK.UPDATE });
+  const table = await RestaurantTable.findByPk(tableId, { transaction, lock: transaction.LOCK.UPDATE });
+  if (!table) throw new DomainError(MESSAGES.TABLE_NOT_FOUND, 404);
+  if (!resource || resource.resourceType !== 'restaurant_table' || table.resourceId !== resource.resourceId) {
+    throw new DomainError('La mesa no tiene un recurso de tipo restaurant_table válido.', 409, { code: 'TABLE_RESOURCE_INVALID' });
+  }
+  return { table, resource };
+}
+
+function tableHistoryError(tableId) {
+  return new DomainError('No se puede eliminar la mesa porque tiene historial o registros asociados. Puede solicitar su desactivación.', 409, {
+    code: 'TABLE_HAS_HISTORY', details: { tableId, alternative: 'deactivate' },
+  });
+}
+
+async function deleteTable(tableId, { confirmed, adminApproval } = {}) {
+  if (!Number.isSafeInteger(tableId) || tableId < 1 || confirmed !== true) {
+    throw new DomainError('Indique una mesa válida y confirme su eliminación permanente.', 422);
+  }
+  // La identidad de auditoría procede de credenciales verificadas, nunca del body.userId.
+  const userId = await verifyTableAdministrator(adminApproval);
+  try {
+    return await sequelize.transaction(async (transaction) => {
+      const { table, resource } = await lockTableResource(tableId, transaction);
+      const account = await RestaurantAccount.findOne({ where: { tableId }, transaction, lock: transaction.LOCK.UPDATE });
+      if (account) throw tableHistoryError(tableId);
+      for (const model of [Booking, ResourceBlock, CabinDetail, EventHallPricingPlan, FieldRate]) {
+        const reference = await model.findOne({ where: { resourceId: resource.resourceId }, transaction, lock: transaction.LOCK.UPDATE });
+        if (reference) throw tableHistoryError(tableId);
+      }
+      const snapshot = { tableId, resourceId: resource.resourceId, tableNumber: table.tableNumber, seatCount: table.seatCount };
+      await table.destroy({ transaction });
+      await resource.destroy({ transaction });
+      await AuditLog.create({
+        userId, action: 'restaurant_table_deleted', entityType: 'restaurant_table', entityId: tableId,
+        details: JSON.stringify(snapshot),
+      }, { transaction });
+      return snapshot;
+    });
+  } catch (error) {
+    // Incluye referencias nuevas/no previstas; el rollback ocurre ANTES del 409.
+    if (error.name === 'SequelizeForeignKeyConstraintError') throw tableHistoryError(tableId);
+    throw error;
+  }
+}
+
 // ---------------------------------------------------------------------
 // HU-106 - Desactivar una mesa.
 //   CA-1: mesa activa y sin cuenta abierta + confirmacion -> estado
@@ -56,8 +109,7 @@ async function deactivateTable(tableId, { confirmed, userId = null } = {}) {
   }
 
   return sequelize.transaction(async (transaction) => {
-    const table = await RestaurantTable.findByPk(tableId, { transaction, lock: transaction.LOCK.UPDATE });
-    if (!table) throw new DomainError(MESSAGES.TABLE_NOT_FOUND, 404);
+    const { table, resource } = await lockTableResource(tableId, transaction);
 
     // CA-3
     if (table.status === 'inactive') {
@@ -70,6 +122,7 @@ async function deactivateTable(tableId, { confirmed, userId = null } = {}) {
     const openAccount = await RestaurantAccount.findOne({
       where: { tableId: table.tableId, status: 'open' },
       transaction,
+      lock: transaction.LOCK.UPDATE,
     });
     if (openAccount) {
       throw new DomainError(MESSAGES.TABLE_HAS_OPEN_ACCOUNT, 409, {
@@ -80,6 +133,7 @@ async function deactivateTable(tableId, { confirmed, userId = null } = {}) {
 
     const previousStatus = table.status;
     await table.update({ status: 'inactive' }, { transaction });
+    await resource.update({ status: 'inactive' }, { transaction });
     await AuditLog.create({
       userId,
       action: 'restaurant_table_deactivated',
@@ -92,4 +146,4 @@ async function deactivateTable(tableId, { confirmed, userId = null } = {}) {
   });
 }
 
-module.exports = { listTables, deactivateTable };
+module.exports = { listTables, deactivateTable, deleteTable };

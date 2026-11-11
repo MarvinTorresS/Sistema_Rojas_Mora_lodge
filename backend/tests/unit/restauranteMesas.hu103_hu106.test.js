@@ -4,19 +4,20 @@
 jest.mock('../../src/models', () => ({
   RestaurantTable: { findAll: jest.fn(), findByPk: jest.fn() },
   RestaurantAccount: { findOne: jest.fn() },
+  Resource: { findByPk: jest.fn() },
   AuditLog: { create: jest.fn() },
   sequelize: { transaction: jest.fn() },
 }));
 const request = require('supertest');
 const app = require('../../src/app');
 const {
-  RestaurantTable, RestaurantAccount, AuditLog, sequelize,
+  RestaurantTable, RestaurantAccount, Resource, AuditLog, sequelize,
 } = require('../../src/models');
 const { listTables, deactivateTable } = require('../../src/modules/restaurante/catalogoMesas.service');
 const { compareTableNumbers } = require('../../src/modules/restaurante/restaurante.util');
 
 const table = (overrides = {}) => ({
-  tableId: 1, tableNumber: '1', seatCount: 4, status: 'available',
+  tableId: 1, resourceId: 21, tableNumber: '1', seatCount: 4, status: 'available',
   update: jest.fn(async function update(values) { Object.assign(this, values); return this; }),
   ...overrides,
 });
@@ -24,6 +25,7 @@ const table = (overrides = {}) => ({
 beforeEach(() => {
   jest.resetAllMocks();
   sequelize.transaction.mockImplementation(async (fn) => fn({ LOCK: { UPDATE: 'UPDATE' } }));
+  Resource.findByPk.mockResolvedValue({ resourceId: 21, resourceType: 'restaurant_table', update: jest.fn() });
 });
 
 describe('HU-103 - Consultar el listado de mesas', () => {

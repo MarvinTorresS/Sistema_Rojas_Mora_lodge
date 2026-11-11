@@ -6,7 +6,8 @@
 // agregan SUS lineas aqui sin tocar las de los demas.
 const express = require('express');
 const controller = require('./catalogoMesas.controller');
-const { deactivateTableRules } = require('./catalogoMesas.validator');
+const { deactivateTableRules, deleteTableRules } = require('./catalogoMesas.validator');
+const { createTableDeletionThrottle } = require('./tableDeletionThrottle.middleware');
 
 const router = express.Router();
 
@@ -15,5 +16,6 @@ router.get('/', controller.listTables);
 
 // HU-106 (Alison) - Desactivar una mesa. Body: { confirmed: true }.
 router.post('/:tableId/deactivate', deactivateTableRules, controller.deactivateTable);
+router.delete('/:tableId', createTableDeletionThrottle(), deleteTableRules, controller.deleteTable);
 
 module.exports = router;

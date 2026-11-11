@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus, RotateCcw } from 'lucide-react';
 import EncabezadoRestaurante from '../components/restaurante/EncabezadoRestaurante';
 import FieldBookingDialog from '../components/FieldBookingDialog';
+import EliminarMesaDialog from '../components/restaurante/EliminarMesaDialog';
 import { deactivateRestaurantTable, listRestaurantTables } from '../services/restauranteService';
 import './ReservasCancha.css';
 import './ReservasSalon.css';
@@ -39,6 +40,7 @@ function RegisterTableLink({ className = '' }) {
 export default function RestauranteMesas() {
   const [state, setState] = useState({ status: 'loading', data: [], meta: null, message: '' });
   const [target, setTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [action, setAction] = useState({ status: 'idle', message: '' });
   const [notice, setNotice] = useState('');
   const requestId = useRef(0);
@@ -153,6 +155,11 @@ export default function RestauranteMesas() {
                         {table.isOccupied && <span className="rst-chip is-pending">En uso</span>}
                       </td>
                       <td>
+                        <button type="button" className="rst-danger"
+                          aria-label={`Eliminar mesa ${table.tableNumber} (Administrador)`}
+                          disabled={busy} onClick={() => { setNotice(''); setDeleteTarget(table); }}>
+                          Eliminar (Administrador)
+                        </button>
                         <button
                           type="button" className="rst-danger"
                           aria-label={`Desactivar mesa ${table.tableNumber}`}
@@ -175,6 +182,16 @@ export default function RestauranteMesas() {
             </div>
           )}
         </section>
+
+        {deleteTarget && (
+          <EliminarMesaDialog table={deleteTarget} onClose={() => setDeleteTarget(null)}
+            onDeleted={(table) => {
+              setDeleteTarget(null);
+              setNotice(`Mesa ${table.tableNumber} eliminada permanentemente.`);
+              load();
+            }}
+            onDeactivate={(table) => { setDeleteTarget(null); openConfirmation(table); }} />
+        )}
 
         {target && (
           <FieldBookingDialog title="Desactivar mesa" kicker="Confirmación" busy={busy} onClose={closeConfirmation}>

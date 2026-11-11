@@ -30,4 +30,13 @@ async function deactivateTable(req, res, next) {
   }
 }
 
-module.exports = { listTables, deactivateTable, actingUserId };
+async function deleteTable(req, res, next) {
+  try {
+    const data = await service.deleteTable(Number(req.params.tableId), {
+      confirmed: req.body?.confirmed, adminApproval: req.body?.adminApproval,
+    });
+    return res.json({ data });
+  } catch (error) { return next(error); }
+}
+
+module.exports = { listTables, deactivateTable, deleteTable, actingUserId };
