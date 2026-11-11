@@ -49,6 +49,7 @@ app.use('/api/cabins', require('./modules/reservasCabina/cabinRate.routes'));
 // sprint agregan sus rutas dentro de estos mismos routers.
 app.use('/api/restaurant-tables', require('./modules/restaurante/catalogoMesas.routes'));
 app.use('/api/restaurant-accounts', require('./modules/restaurante/cuentasMesa.routes'));
+app.use('/api/restaurant-products', require('./modules/restaurante/catalogoProductos.routes'));
 
 // --- Manejo de rutas y errores (siempre al final) ---
 app.use(notFoundHandler);

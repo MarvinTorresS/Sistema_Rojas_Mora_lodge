@@ -21,6 +21,7 @@ import BuscarReservaCabina from './pages/BuscarReservaCabina.jsx';
 import CheckInCabinas from './pages/CheckInCabinas.jsx';
 import CheckOutCabinas from './pages/CheckOutCabinas.jsx';
 import Restaurante from './pages/Restaurante.jsx';
+import RestauranteMenu from './pages/RestauranteMenu.jsx';
 import RestauranteMesas from './pages/RestauranteMesas.jsx';
 import RestauranteCuentas from './pages/RestauranteCuentas.jsx';
 import RestauranteHuespedes from './pages/RestauranteHuespedes.jsx';
@@ -76,6 +77,7 @@ function App() {
               HU-104, HU-105, HU-107, HU-113 a HU-117) son de otros integrantes
               y se enlazan a esta misma portada cuando existan. */}
           <Route path="restaurante" element={<Restaurante />} />
+          <Route path="restaurante/menu" element={<RestauranteMenu />} />
           <Route path="restaurante/mesas" element={<RestauranteMesas />} />
           {/* HU-102 (Marvin): formulario de alta de mesa. El botón "Registrar
               mesa" de HU-103 CA-2 ya apunta aquí. */}

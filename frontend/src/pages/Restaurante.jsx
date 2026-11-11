@@ -11,6 +11,13 @@ import './Restaurante.css';
  */
 const SECTIONS = [
   {
+    to: '/restaurante/menu',
+    icon: UtensilsCrossed,
+    title: 'Productos del menú',
+    hu: 'HU-114',
+    text: 'Consultá precios, existencias y disponibilidad de todos los productos registrados.',
+  },
+  {
     to: '/restaurante/mesas',
     icon: UtensilsCrossed,
     title: 'Mesas',
