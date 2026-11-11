@@ -14,7 +14,7 @@
 //         no se agrega, y el producto queda marcado "Agotado".
 const { Op } = require('sequelize');
 const {
-  RestaurantAccount, AccountItem, Product, RestaurantTable, Customer, AuditLog, sequelize,
+  RestaurantAccount, AccountItem, Product, RestaurantTable, Resource, Customer, AuditLog, sequelize,
 } = require('../../models');
 const { DomainError } = require('../../utils/domainError.util');
 const {
@@ -281,6 +281,63 @@ async function removeAccountItem(accountId, itemId, { expectedVersion, removedRe
   });
 }
 
+// HU-028: Resource -> mesa -> cuenta respeta el orden de apertura/baja.
+// Las primeras lecturas solo localizan filas; se revalidan bajo bloqueo.
+async function closeAccount(accountId, { expectedVersion, userId = null } = {}) {
+  if (![accountId, expectedVersion].every(value => Number.isSafeInteger(value) && value > 0)
+    || (userId !== null && (!Number.isSafeInteger(userId) || userId < 1))) {
+    throw new DomainError('Identificador o versión inválidos.', 422);
+  }
+  return sequelize.transaction({ isolationLevel: 'READ COMMITTED' }, async (transaction) => {
+    const hint = await RestaurantAccount.findByPk(accountId, { transaction });
+    if (!hint) throw new DomainError(MESSAGES.ACCOUNT_NOT_FOUND, 404);
+    const tableHint = await RestaurantTable.findByPk(hint.tableId, { transaction });
+    if (!tableHint) throw new DomainError(MESSAGES.TABLE_NOT_FOUND, 404);
+    const resource = await Resource.findByPk(tableHint.resourceId, { transaction, lock: transaction.LOCK.UPDATE });
+    const table = await RestaurantTable.findByPk(hint.tableId, { transaction, lock: transaction.LOCK.UPDATE });
+    const account = await RestaurantAccount.findByPk(accountId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!account) throw new DomainError(MESSAGES.ACCOUNT_NOT_FOUND, 404);
+    if (!table || !resource || resource.resourceType !== 'restaurant_table'
+      || table.resourceId !== resource.resourceId || account.tableId !== table.tableId) {
+      throw new DomainError('La cuenta no tiene una mesa y recurso válidos.', 409, { code: 'TABLE_RESOURCE_INVALID' });
+    }
+    if (account.status === 'closed') {
+      throw new DomainError('La cuenta ya está cerrada.', 409, { code: CODES.ACCOUNT_CLOSED });
+    }
+    assertAccountOpen(account);
+    if (Number(account.version) !== expectedVersion) {
+      throw new DomainError(MESSAGES.ACCOUNT_VERSION_CONFLICT, 409, {
+        code: CODES.ACCOUNT_VERSION_CONFLICT,
+        details: { expectedVersion, currentVersion: Number(account.version) },
+      });
+    }
+    const activeItem = await AccountItem.findOne({
+      where: { accountId, isRemoved: false }, transaction, lock: transaction.LOCK.UPDATE,
+    });
+    if (!activeItem) {
+      throw new DomainError('No se puede cerrar una cuenta sin consumos activos.', 409, { code: 'ACCOUNT_EMPTY' });
+    }
+    const otherAccount = await RestaurantAccount.findOne({
+      where: { tableId: table.tableId, status: 'open', accountId: { [Op.ne]: accountId } },
+      transaction, lock: transaction.LOCK.UPDATE,
+    });
+    const previousTableStatus = table.status;
+    // No tocar Resource: available no representa ocupación. Tampoco reservas/bloqueos.
+    const tableStatus = table.status === 'inactive' || resource.status !== 'available'
+      ? 'inactive' : otherAccount ? 'occupied' : 'available';
+    // update de instancia incrementa version automáticamente (modelo versionado).
+    await account.update({ status: 'closed', closedAt: new Date() }, { transaction });
+    if (tableStatus !== table.status) await table.update({ status: tableStatus }, { transaction });
+    await AuditLog.create({
+      userId, action: 'restaurant_account_closed', entityType: 'restaurant_account', entityId: accountId,
+      details: JSON.stringify({ tableId: table.tableId, previousTableStatus, tableStatus,
+        resourceStatus: resource.status, previousVersion: expectedVersion, version: account.version }),
+    }, { transaction });
+    return { ...await buildAccountDetail(account, { transaction }), closedAt: account.closedAt,
+      tableStatus, resourceStatus: resource.status };
+  });
+}
+
 // Cuentas abiertas (las que aceptan consumos), con su consumo acumulado.
 async function listOpenAccounts() {
   const accounts = await RestaurantAccount.findAll({
@@ -323,6 +380,7 @@ async function listOrderMenu() {
 }
 
 module.exports = {
+  closeAccount,
   removeAccountItem,
   updateItemQuantity,
   normalizeRequestedItems,

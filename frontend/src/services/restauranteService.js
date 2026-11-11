@@ -143,3 +143,13 @@ export function removeAccountItem(accountId, itemId, { expectedVersion, removedR
     'No se pudo retirar el producto.',
   );
 }
+
+// HU-028: cierre operativo, sin facturación ni pagos.
+export function closeAccount(accountId, { expectedVersion }) {
+  return request(
+    async () => (await api.post(`${ACCOUNTS_PATH}/${accountId}/close`, {
+      expectedVersion, userId: RESTAURANT_USER_ID,
+    })).data.data,
+    'No se pudo cerrar la cuenta.',
+  );
+}

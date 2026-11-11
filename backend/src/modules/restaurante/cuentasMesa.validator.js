@@ -39,6 +39,18 @@ const updateItemQuantityRules = [
   handleValidationErrors,
 ];
 
+const closeAccountRules = [
+  param('accountId').isInt({ min: 1 }).withMessage('El identificador de la cuenta debe ser un entero positivo.'),
+  body().custom(value => value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).every(key => ['expectedVersion', 'userId'].includes(key)))
+    .withMessage('Envíe solamente versión y usuario de auditoría.'),
+  body('expectedVersion').custom(value => Number.isSafeInteger(value) && value > 0)
+    .withMessage('La versión esperada debe ser un entero positivo.'),
+  body('userId').optional().custom(value => Number.isSafeInteger(value) && value > 0)
+    .withMessage('El usuario debe ser un entero positivo.'),
+  handleValidationErrors,
+];
+
 const removeAccountItemRules = [
   param('accountId').isInt({ min: 1 }).withMessage('El identificador de la cuenta debe ser un entero positivo.'),
   param('itemId').isInt({ min: 1 }).withMessage('El identificador de la línea debe ser un entero positivo.'),
@@ -97,6 +109,7 @@ const openAccountRules = [
 ];
 
 module.exports = {
+  closeAccountRules,
   removeAccountItemRules,
   openAccountRules,
   updateItemQuantityRules,

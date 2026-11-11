@@ -54,6 +54,15 @@ async function updateItemQuantity(req, res, next) {
   } catch (error) { return next(error); }
 }
 
+async function closeAccount(req, res, next) {
+  try {
+    const data = await pedido.closeAccount(Number(req.params.accountId), {
+      expectedVersion: req.body.expectedVersion, userId: actingUserId(req),
+    });
+    return res.json({ data });
+  } catch (error) { return next(error); }
+}
+
 async function removeAccountItem(req, res, next) {
   try {
     const data = await pedido.removeAccountItem(Number(req.params.accountId), Number(req.params.itemId), {
@@ -98,6 +107,7 @@ async function openAccount(req, res, next) {
 }
 
 module.exports = {
+  closeAccount,
   removeAccountItem,
   openAccount,
   updateItemQuantity,

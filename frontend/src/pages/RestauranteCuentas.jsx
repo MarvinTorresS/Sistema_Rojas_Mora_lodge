@@ -4,7 +4,7 @@ import { RotateCcw } from 'lucide-react';
 import EncabezadoRestaurante from '../components/restaurante/EncabezadoRestaurante';
 import { PedidoPendiente, SelectorProductos } from '../components/restaurante/ProductosPedido';
 import {
-  addProductsToAccount, getAccount, listOpenAccounts, listOrderMenu, updateItemQuantity, removeAccountItem,
+  addProductsToAccount, getAccount, listOpenAccounts, listOrderMenu, updateItemQuantity, removeAccountItem, closeAccount,
 } from '../services/restauranteService';
 import { formatDateTime, money, toRequestItems, MAX_QUANTITY_PER_LINE } from '../utils/restaurante';
 import './ReservasCancha.css';
@@ -29,6 +29,7 @@ export default function RestauranteCuentas() {
   const [pending, setPending] = useState([]);
   const [submit, setSubmit] = useState({ status: 'idle', message: '' });
   const [notice, setNotice] = useState('');
+  const [closing, setClosing] = useState(null);
   const [removing, setRemoving] = useState(null);
   const [editing, setEditing] = useState(null);
   const [editResult, setEditResult] = useState({ status: 'idle', message: '', needsReload: false });
@@ -76,6 +77,7 @@ export default function RestauranteCuentas() {
     if (sending.current) return;
     const id = ++detailRequest.current;
     setSelectedId(accountId);
+    setClosing(null);
     setRemoving(null);
     setEditing(null);
     setEditResult({ status: 'idle', message: '', needsReload: false });
@@ -92,7 +94,7 @@ export default function RestauranteCuentas() {
   }
 
   async function addToAccount() {
-    if (sending.current || editing || removing || editResult.needsReload || pending.length === 0 || !selectedId) return;
+    if (sending.current || editing || removing || closing || editResult.needsReload || pending.length === 0 || !selectedId) return;
     sending.current = true;
     setSubmit({ status: 'loading', message: '' });
     setNotice('');
@@ -124,6 +126,7 @@ export default function RestauranteCuentas() {
       const data = await getAccount(selectedId);
       setDetail({ status: 'success', data, message: '' });
       setEditing(null);
+      setClosing(null);
       setRemoving(null);
       setEditResult({ status: 'idle', message: '', needsReload: false });
       loadAccounts();
@@ -147,6 +150,7 @@ export default function RestauranteCuentas() {
       const updated = await updateItemQuantity(selectedId, editing.itemId, { quantity, expectedVersion: editing.expectedVersion });
       setDetail({ status: 'success', data: updated, message: '' });
       setEditing(null);
+      setClosing(null);
       setRemoving(null);
       setEditResult({ status: 'idle', message: '', needsReload: false });
       setNotice('Cantidad actualizada correctamente.');
@@ -186,6 +190,30 @@ export default function RestauranteCuentas() {
       loadMenu({ preserveDraft: true });
     } catch (error) {
       const needsReload = ['ACCOUNT_VERSION_CONFLICT', 'ACCOUNT_CLOSED', 'ITEM_ALREADY_SENT', 'ITEM_REMOVED'].includes(error.code)
+        || error.status === 404;
+      setEditResult({ status: 'error', message: error.message, needsReload });
+      if (error.code === 'ACCOUNT_CLOSED') loadAccounts();
+    } finally { sending.current = false; }
+  }
+
+  async function confirmClose() {
+    if (sending.current || !closing || editResult.needsReload) return;
+    sending.current = true;
+    setEditResult({ status: 'loading', message: '', needsReload: false });
+    setNotice('');
+    try {
+      const updated = await closeAccount(selectedId, { expectedVersion: closing.expectedVersion });
+      setDetail({ status: 'success', data: updated, message: '' });
+      setClosing(null);
+      setPending([]);
+      setEditResult({ status: 'idle', message: '', needsReload: false });
+      setNotice(updated.tableStatus === 'available'
+        ? 'Cuenta cerrada correctamente. Mesa disponible para un nuevo servicio.'
+        : 'Cuenta cerrada correctamente. La mesa conserva sus restricciones o su ocupación por otra cuenta.');
+      setAccounts(prev => ({ ...prev, data: prev.data.filter(entry => entry.accountId !== selectedId) }));
+      loadAccounts();
+    } catch (error) {
+      const needsReload = ['ACCOUNT_VERSION_CONFLICT', 'ACCOUNT_CLOSED', 'ACCOUNT_EMPTY'].includes(error.code)
         || error.status === 404;
       setEditResult({ status: 'error', message: error.message, needsReload });
       if (error.code === 'ACCOUNT_CLOSED') loadAccounts();
@@ -255,7 +283,7 @@ export default function RestauranteCuentas() {
               </div>
               <SelectorProductos
                 menu={menu.data} pending={pending} onChange={setPending}
-                disabled={!selectedId || sendingNow || account?.status !== 'open'}
+                disabled={!selectedId || sendingNow || Boolean(closing) || account?.status !== 'open'}
                 loading={menu.status === 'loading' && menu.data.length === 0}
                 error={menu.status === 'error' ? menu.message : ''} onRetry={loadMenu}
               />
@@ -316,14 +344,14 @@ export default function RestauranteCuentas() {
                             ) : account.status === 'open' && line.kitchenStatus === 'pending' ? (
                               <>
                               <button type="button" className="rst-ghost" aria-label={`Editar cantidad de ${line.name}, línea ${line.itemId}`}
-                                disabled={sendingNow || Boolean(editing) || Boolean(removing) || editResult.needsReload}
+                                disabled={sendingNow || Boolean(editing) || Boolean(removing) || Boolean(closing) || editResult.needsReload}
                                 onClick={() => {
                                   setEditing({ itemId: line.itemId, quantity: String(line.quantity), expectedVersion: account.version });
                                   setEditResult({ status: 'idle', message: '', needsReload: false });
                                   setNotice('');
                                 }}>Editar cantidad</button>
                               <button type="button" className="rst-ghost" aria-label={`Retirar ${line.name}, línea ${line.itemId}`}
-                                disabled={sendingNow || Boolean(editing) || Boolean(removing) || editResult.needsReload}
+                                disabled={sendingNow || Boolean(editing) || Boolean(removing) || Boolean(closing) || editResult.needsReload}
                                 onClick={() => {
                                   setRemoving({ itemId: line.itemId, name: line.name, expectedVersion: account.version, reason: '' });
                                   setEditResult({ status: 'idle', message: '', needsReload: false });
@@ -339,6 +367,31 @@ export default function RestauranteCuentas() {
                     </tbody>
                   </table>
                   </div>
+                )}
+
+                {account.status === 'open' && (
+                  <button type="button" className="rst-ghost"
+                    disabled={sendingNow || Boolean(editing) || Boolean(removing) || Boolean(closing) || editResult.needsReload}
+                    onClick={() => {
+                      if (account.items.length === 0) {
+                        setEditResult({ status: 'error', message: 'No se puede cerrar una cuenta sin consumos activos.', needsReload: false });
+                        return;
+                      }
+                      setClosing({ expectedVersion: account.version });
+                      setEditResult({ status: 'idle', message: '', needsReload: false });
+                      setNotice('');
+                    }}>Cerrar cuenta</button>
+                )}
+                {closing && (
+                  <section role="dialog" aria-labelledby="close-account-title" className="rst-panel">
+                    <h3 id="close-account-title">Confirmar cierre de cuenta</h3>
+                    <p>¿Finalizar el servicio? El cierre no registra pagos ni genera facturas.</p>
+                    {pending.length > 0 && <p>Hay productos sin agregar. Si confirma, se descartará ese borrador.</p>}
+                    <button type="button" disabled={sendingNow || editResult.needsReload} onClick={confirmClose}>
+                      {sendingNow ? 'Cerrando…' : 'Confirmar cierre'}
+                    </button>
+                    <button type="button" disabled={sendingNow} onClick={() => setClosing(null)}>Volver sin cerrar</button>
+                  </section>
                 )}
 
                 {removing && (
@@ -362,13 +415,13 @@ export default function RestauranteCuentas() {
                   <strong>{money(account.accumulatedTotal)}</strong>
                 </div>
 
-                <PedidoPendiente menu={menu.data} pending={pending} onChange={setPending} disabled={sendingNow}>
+                <PedidoPendiente menu={menu.data} pending={pending} onChange={setPending} disabled={sendingNow || Boolean(closing) || account.status !== 'open'}>
                   {submit.status === 'error' && (
                     <p role="alert" className="rst-alert-text">
                       {submit.message}{submit.productName ? ` (${submit.productName})` : ''}
                     </p>
                   )}
-                  <button type="button" className="bmb-continue" disabled={pending.length === 0 || sendingNow || Boolean(editing) || Boolean(removing) || editResult.needsReload || account.status !== 'open'} onClick={addToAccount}>
+                  <button type="button" className="bmb-continue" disabled={pending.length === 0 || sendingNow || Boolean(editing) || Boolean(removing) || Boolean(closing) || editResult.needsReload || account.status !== 'open'} onClick={addToAccount}>
                     <span>{submit.status === 'loading' ? 'Agregando…' : 'Agregar a la cuenta'}</span>
                   </button>
                 </PedidoPendiente>
