@@ -51,6 +51,9 @@ importers:
       supertest:
         specifier: ^7.0.0
         version: 7.2.2
+      vitest:
+        specifier: ^2.1.4
+        version: 2.1.9(@types/node@26.4.1)(jsdom@25.0.1)
 
   frontend:
     dependencies:

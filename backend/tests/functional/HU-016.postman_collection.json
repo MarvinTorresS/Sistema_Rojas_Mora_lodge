@@ -1,0 +1,255 @@
+{
+  "info": {
+    "name": "HU-016 - Registrar reserva de cabina (prueba funcional)",
+    "description": "Prueba funcional de HU-016 (Rojas Mora Sports & Lodge). Requiere: docker compose up -d, pnpm run migrate, pnpm run seed, pnpm exec sequelize-cli db:seed --seed 20261007000001-seed-cabin-resources.js y pnpm run dev (backend en http://localhost:4000). CA-2 y CA-3 dependen de CA-1. Orden: Preparación, CA-1, CA-2, CA-3a, CA-3b.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Preparación - Disponibilidad de cabinas",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "description": "No es evidencia de ningún CA: muestra qué cabinas están libres antes de registrar.",
+        "url": {
+          "raw": "{{baseUrl}}/api/cabin-bookings/availability?checkInDate=2027-02-10&checkOutDate=2027-02-12&partySize=2",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "cabin-bookings",
+            "availability"
+          ],
+          "query": [
+            {
+              "key": "checkInDate",
+              "value": "2027-02-10"
+            },
+            {
+              "key": "checkOutDate",
+              "value": "2027-02-12"
+            },
+            {
+              "key": "partySize",
+              "value": "2"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "CA-1 - Registro exitoso",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "description": "Cabina 1 (resourceId 3) libre del 10 al 12/02/2027. Requiere que el huésped no exista.",
+        "url": {
+          "raw": "{{baseUrl}}/api/cabin-bookings",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "cabin-bookings"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"resourceId\": 3,\n  \"guestName\": \"Mariana Vargas Solís\",\n  \"guestIdentification\": \"112340001\",\n  \"guestPhone\": \"88885555\",\n  \"guestEmail\": \"mariana.vargas@example.com\",\n  \"checkInDate\": \"2027-02-10\",\n  \"checkOutDate\": \"2027-02-12\",\n  \"companions\": 1\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "const d = pm.response.json().data;",
+              "pm.test('Reserva activa de 2 noches con el monto calculado', () => {",
+              "  pm.expect(d.booking.status).to.eql('active');",
+              "  pm.expect(d.stay.nights).to.eql(2);",
+              "  pm.expect(d.totalAmount).to.eql(70000);",
+              "});",
+              "pm.test('Se guardan los datos del huésped', () => {",
+              "  pm.expect(d.guest.identificationNumber).to.eql('112340001');",
+              "});",
+              "pm.collectionVariables.set('guestCustomerId', d.guest.customerId);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "CA-2 - Conflicto de disponibilidad (misma cabina y fechas de CA-1)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "description": "Ejecutar DESPUÉS de CA-1: la Cabina 1 ya está reservada esas noches.",
+        "url": {
+          "raw": "{{baseUrl}}/api/cabin-bookings",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "cabin-bookings"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"resourceId\": 3,\n  \"guestName\": \"Carlos Mora Jiménez\",\n  \"guestIdentification\": \"203450002\",\n  \"guestPhone\": \"87776666\",\n  \"guestEmail\": \"carlos.mora@example.com\",\n  \"checkInDate\": \"2027-02-10\",\n  \"checkOutDate\": \"2027-02-12\",\n  \"companions\": 1\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 409', () => pm.response.to.have.status(409));",
+              "const e = pm.response.json().error;",
+              "pm.test('Mensaje y código de conflicto', () => {",
+              "  pm.expect(e.message).to.eql('La cabina no se encuentra disponible en las fechas seleccionadas');",
+              "  pm.expect(e.code).to.eql('CABIN_NOT_AVAILABLE');",
+              "});",
+              "pm.test('Sugiere cabinas alternativas distintas a la ocupada', () => {",
+              "  pm.expect(e.details.alternatives).to.be.an('array').that.is.not.empty;",
+              "  e.details.alternatives.forEach((c) => pm.expect(c.resourceId).to.not.eql(3));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "CA-3a - Huésped duplicado (misma identificación, sin vincular)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "description": "Ejecutar DESPUÉS de CA-1: la identificación 112340001 ya pertenece a Mariana (Cabina 2, libre).",
+        "url": {
+          "raw": "{{baseUrl}}/api/cabin-bookings",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "cabin-bookings"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"resourceId\": 4,\n  \"guestName\": \"Mariana Vargas Solís\",\n  \"guestIdentification\": \"112340001\",\n  \"guestPhone\": \"88885555\",\n  \"guestEmail\": \"mariana.vargas@example.com\",\n  \"checkInDate\": \"2027-02-14\",\n  \"checkOutDate\": \"2027-02-16\",\n  \"companions\": 1,\n  \"linkExistingGuest\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 409', () => pm.response.to.have.status(409));",
+              "const e = pm.response.json().error;",
+              "pm.test('Informa que el huésped ya está registrado', () => {",
+              "  pm.expect(e.message).to.eql('El huésped ya se encuentra registrado');",
+              "  pm.expect(e.code).to.eql('GUEST_ALREADY_EXISTS');",
+              "  pm.expect(e.details.existingGuest.customerId).to.eql(Number(pm.collectionVariables.get('guestCustomerId')));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "CA-3b - Vincular la reserva al huésped existente",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "description": "Mismo cuerpo que CA-3a pero con linkExistingGuest = true (el recepcionista confirma vincular).",
+        "url": {
+          "raw": "{{baseUrl}}/api/cabin-bookings",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "cabin-bookings"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"resourceId\": 4,\n  \"guestName\": \"Mariana Vargas Solís\",\n  \"guestIdentification\": \"112340001\",\n  \"guestPhone\": \"88885555\",\n  \"guestEmail\": \"mariana.vargas@example.com\",\n  \"checkInDate\": \"2027-02-14\",\n  \"checkOutDate\": \"2027-02-16\",\n  \"companions\": 1,\n  \"linkExistingGuest\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "const d = pm.response.json().data;",
+              "pm.test('La reserva queda vinculada al huésped existente', () => {",
+              "  pm.expect(d.booking.status).to.eql('active');",
+              "  pm.expect(d.guest.customerId).to.eql(Number(pm.collectionVariables.get('guestCustomerId')));",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

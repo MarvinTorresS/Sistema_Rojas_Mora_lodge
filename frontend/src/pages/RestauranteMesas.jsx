@@ -4,10 +4,13 @@ import { Plus, RotateCcw } from 'lucide-react';
 import EncabezadoRestaurante from '../components/restaurante/EncabezadoRestaurante';
 import FieldBookingDialog from '../components/FieldBookingDialog';
 import EliminarMesaDialog from '../components/restaurante/EliminarMesaDialog';
+import TableSearch from '../components/restaurante/registro/TableSearch';
 import { deactivateRestaurantTable, listRestaurantTables } from '../services/restauranteService';
+import { TABLES_NOT_FOUND_MESSAGE, describeTableFilters } from '../utils/restauranteFormulario';
 import './ReservasCancha.css';
 import './ReservasSalon.css';
 import './Restaurante.css';
+import './RestauranteFormularios.css';
 
 /**
  * Catalogo de mesas del restaurante.
@@ -23,6 +26,10 @@ import './Restaurante.css';
  *   CA-2  Con cuenta abierta: "No es posible desactivar una mesa con cuenta abierta".
  *   CA-3  Ya inactiva: "La mesa ya se encuentra inactiva"; "Desactivar" queda
  *         deshabilitado y se ofrece "Reactivar" (HU-107, de otro integrante).
+ * HU-104 (Marvin - Buscar mesa por número o capacidad)
+ *   CA-1  Buscar/Enter muestra solo las mesas que coinciden (lo filtra el backend).
+ *   CA-2  Sin coincidencias: "No se encontraron mesas con los criterios
+ *         indicados" y el criterio sigue escrito en el buscador.
  */
 export const CONFIRM_MESSAGE = '¿Está seguro de que desea desactivar esta mesa?';
 export const EMPTY_MESSAGE = 'No hay mesas registradas actualmente';
@@ -43,6 +50,8 @@ export default function RestauranteMesas() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [action, setAction] = useState({ status: 'idle', message: '' });
   const [notice, setNotice] = useState('');
+  // HU-104: criterios aplicados (null = sin busqueda, listado completo de HU-103).
+  const [filters, setFilters] = useState(null);
   const requestId = useRef(0);
   const busy = action.status === 'loading';
 
@@ -50,12 +59,12 @@ export default function RestauranteMesas() {
     const id = ++requestId.current;
     setState((prev) => ({ ...prev, status: 'loading', message: '' }));
     try {
-      const { data, meta } = await listRestaurantTables();
+      const { data, meta } = await (filters ? listRestaurantTables(filters) : listRestaurantTables());
       if (id === requestId.current) setState({ status: 'success', data, meta, message: '' });
     } catch (error) {
       if (id === requestId.current) setState((prev) => ({ ...prev, status: 'error', message: error.message }));
     }
-  }, []);
+  }, [filters]);
   useEffect(() => { load(); return () => { requestId.current += 1; }; }, [load]);
 
   function openConfirmation(table) {
@@ -89,6 +98,8 @@ export default function RestauranteMesas() {
 
   const { data: tables, meta } = state;
   const hasTables = state.status === 'success' && tables.length > 0;
+  // El catalogo tiene mesas aunque la busqueda no encuentre ninguna (HU-104).
+  const hasCatalog = state.status === 'success' && (meta?.total ?? tables.length) > 0;
 
   return (
     <div className="bombonera bmb-salon bmb-restaurante">
@@ -112,7 +123,11 @@ export default function RestauranteMesas() {
             </button>
           </div>
 
-          {hasTables && meta && (
+          {(hasCatalog || filters) && (
+            <TableSearch onSearch={setFilters} disabled={state.status === 'loading' || busy} />
+          )}
+
+          {hasCatalog && meta && (
             <dl className="rst-stats" aria-label="Resumen de mesas">
               <div><dt>Mesas</dt><dd>{meta.total}</dd></div>
               <div><dt>Activas</dt><dd>{meta.activeTotal}</dd></div>
@@ -129,11 +144,22 @@ export default function RestauranteMesas() {
                 <button type="button" onClick={load}>Reintentar</button>
               </div>
             )}
-            {state.status === 'success' && tables.length === 0 && (
+            {state.status === 'success' && tables.length === 0 && !filters && (
               <div className="rst-empty">
                 <p>{EMPTY_MESSAGE}</p>
                 <RegisterTableLink className="bmb-action" />
               </div>
+            )}
+            {state.status === 'success' && tables.length === 0 && filters && (
+              <div className="rst-empty" role="status">
+                <p>{TABLES_NOT_FOUND_MESSAGE}</p>
+                <p className="rst-search-criteria">Criterios: {describeTableFilters(filters)}</p>
+              </div>
+            )}
+            {hasTables && filters && (
+              <p role="status" className="rst-search-echo">
+                {meta?.matchedTotal ?? tables.length} de {meta?.total ?? tables.length} mesas coinciden · {describeTableFilters(filters)}
+              </p>
             )}
           </div>
 
@@ -171,7 +197,7 @@ export default function RestauranteMesas() {
                           <button
                             type="button" className="rst-ghost"
                             aria-label={`Reactivar mesa ${table.tableNumber}`}
-                            disabled title="La reactivación de mesas se habilita con la HU-107"
+                            disabled title="La reactivación de mesas aún no está disponible"
                           >Reactivar</button>
                         )}
                       </td>

@@ -1,0 +1,714 @@
+{
+  "info": {
+    "name": "HU-127 - Extender hospedaje de cabina (prueba funcional)",
+    "description": "Prueba funcional de HU-127 (Rojas Mora Sports & Lodge). Requiere el backend y la base de datos migrada y sembrada (incluido el seeder de cabinas). Orden: ejecutar TODA la carpeta \"Preparación\" (crea 5 reservas), correr el UPDATE de SQL indicado en la descripción de \"Prep-5\" y luego CA-1, CA-2, CA-3, CA-4 y CA-5.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Preparación",
+      "item": [
+        {
+          "name": "Prep-1 - Reserva X (Cabina 3, para CA-1 y CA-3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "No es evidencia de ningún CA: reserva de 2 noches en la Cabina 3 (₡80 000/noche) que se extenderá en CA-1 y CA-3.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 5,\n  \"guestName\": \"Andrea Rojas Campos\",\n  \"guestIdentification\": \"305670003\",\n  \"guestPhone\": \"86667777\",\n  \"guestEmail\": \"andrea.rojas@example.com\",\n  \"checkInDate\": \"2027-03-01\",\n  \"checkOutDate\": \"2027-03-03\",\n  \"companions\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('bookingX', pm.response.json().data.booking.bookingId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Prep-2 - Reserva Y (Cabina 4, para CA-2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "No es evidencia de ningún CA: reserva que se intentará extender en CA-2.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 6,\n  \"guestName\": \"Luis Araya Mena\",\n  \"guestIdentification\": \"401230004\",\n  \"guestPhone\": \"85556666\",\n  \"guestEmail\": \"luis.araya@example.com\",\n  \"checkInDate\": \"2027-03-01\",\n  \"checkOutDate\": \"2027-03-03\",\n  \"companions\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('bookingY', pm.response.json().data.booking.bookingId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Prep-3 - Reserva Z (Cabina 4, ocupa las noches siguientes a Y)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "No es evidencia de ningún CA: ocupa la Cabina 4 del 03 al 05/03/2027, justo después de Y, para provocar el conflicto de CA-2.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 6,\n  \"guestName\": \"Sofía Quesada Brenes\",\n  \"guestIdentification\": \"502340005\",\n  \"guestPhone\": \"84445555\",\n  \"guestEmail\": \"sofia.quesada@example.com\",\n  \"checkInDate\": \"2027-03-03\",\n  \"checkOutDate\": \"2027-03-05\",\n  \"companions\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('bookingZ', pm.response.json().data.booking.bookingId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Prep-4 - Reserva V (Cabina 2, para CA-5)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "No es evidencia de ningún CA: reserva sobre la que se abre y se cancela la solicitud de extensión en CA-5.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 4,\n  \"guestName\": \"Pablo Chaves Soto\",\n  \"guestIdentification\": \"701230007\",\n  \"guestPhone\": \"82223333\",\n  \"guestEmail\": \"pablo.chaves@example.com\",\n  \"checkInDate\": \"2027-03-20\",\n  \"checkOutDate\": \"2027-03-22\",\n  \"companions\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('bookingV', pm.response.json().data.booking.bookingId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Prep-5 - Reserva W (Cabina 1, para CA-4)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "No es evidencia de ningún CA: reserva que debe quedar \"Finalizada\". Después de ejecutarla, correr en PowerShell (sustituyendo ID por el bookingId de la respuesta): docker exec rojas_mora_mysql mysql -uroot -proot1234 rojas_mora_lodge -e \"UPDATE bookings SET status='completed' WHERE booking_id=ID;\"",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 3,\n  \"guestName\": \"Elena Zúñiga Rojas\",\n  \"guestIdentification\": \"603450006\",\n  \"guestPhone\": \"83334444\",\n  \"guestEmail\": \"elena.zuniga@example.com\",\n  \"checkInDate\": \"2027-03-10\",\n  \"checkOutDate\": \"2027-03-12\",\n  \"companions\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('bookingW', pm.response.json().data.booking.bookingId);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CA-1 - Extensión exitosa",
+      "item": [
+        {
+          "name": "CA-1a - Cotización de la extensión (solo lectura)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Muestra cuánto costaría y si hay cupo, sin modificar nada.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings/{{bookingX}}/extension-quote?newCheckOutDate=2027-03-05",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings",
+                "{{bookingX}}",
+                "extension-quote"
+              ],
+              "query": [
+                {
+                  "key": "newCheckOutDate",
+                  "value": "2027-03-05"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const a = pm.response.json().data.amounts;",
+                  "pm.test('2 noches adicionales a ₡80 000', () => {",
+                  "  pm.expect(pm.response.json().data.stay.extraNights).to.eql(2);",
+                  "  pm.expect(a.extensionAmount).to.eql(160000);",
+                  "  pm.expect(a.newTotal).to.eql(320000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-1b - Confirmar la extensión",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Extiende la reserva X del 03/03 al 05/03/2027.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings/{{bookingX}}/extensions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings",
+                "{{bookingX}}",
+                "extensions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newCheckOutDate\": \"2027-03-05\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('Nueva fecha de salida y monto recalculado', () => {",
+                  "  pm.expect(d.stay.previousCheckOutDate).to.eql('2027-03-03');",
+                  "  pm.expect(d.stay.newCheckOutDate).to.eql('2027-03-05');",
+                  "  pm.expect(d.amounts.previousTotal).to.eql(160000);",
+                  "  pm.expect(d.amounts.extensionAmount).to.eql(160000);",
+                  "  pm.expect(d.amounts.newTotal).to.eql(320000);",
+                  "  pm.expect(d.amounts.pendingBalance).to.eql(320000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CA-2 - Sin disponibilidad",
+      "item": [
+        {
+          "name": "CA-2a - Extender Y sobre las noches ocupadas por Z",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Y termina el 03/03 y Z ocupa la misma cabina del 03 al 05/03.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings/{{bookingY}}/extensions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings",
+                "{{bookingY}}",
+                "extensions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newCheckOutDate\": \"2027-03-05\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "const e = pm.response.json().error;",
+                  "pm.test('Mensaje y código de no disponibilidad', () => {",
+                  "  pm.expect(e.message).to.eql('No es posible extender la estadía porque la cabina no se encuentra disponible para la fecha solicitada');",
+                  "  pm.expect(e.code).to.eql('EXTENSION_NOT_AVAILABLE');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-2b - Verificar que la reserva Y no cambió",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Confirma que el intento fallido no modificó la reserva.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings/extendable?search=401230004",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings",
+                "extendable"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "401230004"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const item = pm.response.json().data[0];",
+                  "pm.test('La salida de Y sigue siendo 2027-03-03', () => pm.expect(item.stay.checkOutDate).to.eql('2027-03-03'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CA-3 - Extensión con cambio de tarifa",
+      "item": [
+        {
+          "name": "CA-3a - Cambiar la tarifa de la Cabina 3 a ₡90 000 (HU-128)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Cambia la tarifa vigente de 80 000 a 90 000 antes de extender de nuevo.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins/5/rate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins",
+                "5",
+                "rate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pricePerNight\": 90000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Tarifa actualizada', () => pm.expect(pm.response.json().data.cabin.pricePerNight).to.eql(90000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-3b - Extender X una noche más con la tarifa nueva",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Ejecutar DESPUÉS de CA-1b. X pasa del 05/03 al 06/03/2027.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings/{{bookingX}}/extensions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings",
+                "{{bookingX}}",
+                "extensions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newCheckOutDate\": \"2027-03-06\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const a = pm.response.json().data.amounts;",
+                  "pm.test('Noche nueva a tarifa vigente; lo registrado no se recalcula', () => {",
+                  "  pm.expect(a.nightlyRate).to.eql(90000);",
+                  "  pm.expect(a.extensionAmount).to.eql(90000);",
+                  "  pm.expect(a.previousTotal).to.eql(320000);",
+                  "  pm.expect(a.newTotal).to.eql(410000);",
+                  "  pm.expect(a.pendingBalance).to.eql(410000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-3c - Restaurar la tarifa de la Cabina 3 a ₡80 000",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "No es evidencia de ningún CA: deja la tarifa como en el seeder.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins/5/rate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins",
+                "5",
+                "rate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pricePerNight\": 80000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CA-4 - Reserva finalizada",
+      "item": [
+        {
+          "name": "CA-4 - Extender una reserva Finalizada (W)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Requiere haber corrido antes el UPDATE de SQL que deja W como \"completed\".",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings/{{bookingW}}/extensions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings",
+                "{{bookingW}}",
+                "extensions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newCheckOutDate\": \"2027-03-14\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "const e = pm.response.json().error;",
+                  "pm.test('Mensaje y código de reserva finalizada', () => {",
+                  "  pm.expect(e.message).to.eql('No es posible extender una reserva finalizada');",
+                  "  pm.expect(e.code).to.eql('BOOKING_COMPLETED');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CA-5 - Cancelación de la solicitud",
+      "item": [
+        {
+          "name": "CA-5a - Abrir la cotización (el recepcionista aún no confirma)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Al presionar \"Cancelar\" el frontend NO envía el POST de extensión; aquí solo existió la cotización.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings/{{bookingV}}/extension-quote?newCheckOutDate=2027-03-24",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings",
+                "{{bookingV}}",
+                "extension-quote"
+              ],
+              "query": [
+                {
+                  "key": "newCheckOutDate",
+                  "value": "2027-03-24"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Solo cotiza: 2 noches adicionales', () => pm.expect(pm.response.json().data.stay.extraNights).to.eql(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-5b - Verificar que la reserva V no cambió",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Tras cancelar, la reserva queda exactamente igual.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings/extendable?search=701230007",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings",
+                "extendable"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "701230007"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const item = pm.response.json().data[0];",
+                  "pm.test('La salida de V sigue siendo 2027-03-22', () => pm.expect(item.stay.checkOutDate).to.eql('2027-03-22'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

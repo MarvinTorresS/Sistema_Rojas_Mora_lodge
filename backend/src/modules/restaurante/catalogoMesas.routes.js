@@ -6,13 +6,21 @@
 // agregan SUS lineas aqui sin tocar las de los demas.
 const express = require('express');
 const controller = require('./catalogoMesas.controller');
-const { deactivateTableRules, deleteTableRules } = require('./catalogoMesas.validator');
+const {
+  deactivateTableRules, deleteTableRules, createTableRules, searchTablesRules,
+} = require('./catalogoMesas.validator');
 const { createTableDeletionThrottle } = require('./tableDeletionThrottle.middleware');
 
 const router = express.Router();
 
 // HU-103 (Alison) - Listado de mesas, ordenado por numero ascendente.
-router.get('/', controller.listTables);
+// HU-104 (Marvin) - Filtros opcionales ?number=&minSeats= (sin ellos, la
+// respuesta es la misma de HU-103).
+router.get('/', searchTablesRules, controller.listTables);
+
+// HU-102 (Marvin) - Registrar una nueva mesa.
+// Body: { tableNumber, seatCount, location?, userId? }.
+router.post('/', createTableRules, controller.createTable);
 
 // HU-106 (Alison) - Desactivar una mesa. Body: { confirmed: true }.
 router.post('/:tableId/deactivate', deactivateTableRules, controller.deactivateTable);

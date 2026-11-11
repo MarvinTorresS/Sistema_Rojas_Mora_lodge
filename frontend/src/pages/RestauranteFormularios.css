@@ -1,0 +1,115 @@
+/* Restaurante - Sprint 4 (Marvin): HU-102, HU-104 y HU-113.
+   Reutiliza el lenguaje visual de .bombonera / .bmb-* / .rst-*; aqui solo
+   van las piezas nuevas: formularios de registro, vista previa y buscador. */
+
+/* Boton-pastilla de los encabezados ("Registrar mesa", "Registrar producto").
+   La clase ya la usaba RestauranteMesas.jsx pero no tenia estilo. */
+.bmb-restaurante .bmb-pill-link{display:inline-flex;align-items:center;gap:8px;min-height:44px;border-radius:30px;background:var(--bmb-green);padding:11px 18px;font-size:12px;font-weight:600;color:#fff;text-decoration:none;transition:background .2s,transform .2s}
+.bmb-restaurante .bmb-pill-link:hover{background:#27500a;transform:translateY(-1px)}
+
+/* ---- Diseno de la pantalla de registro (formulario + vista previa) ---- */
+.rst-register-layout{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.rst-register-form,.rst-register-done{flex:999 1 520px;min-width:0;display:flex;flex-direction:column;gap:24px}
+.rst-preview{flex:1 1 300px;min-width:0;position:sticky;top:18px}
+.rst-preview .bmb-kicker{margin-bottom:14px}
+.rst-preview-note{border-top:1px solid var(--bmb-line);margin-top:20px;padding-top:14px}
+
+/* ---- Campos ---- */
+.rst-register-form fieldset{border:0;margin:0;padding:0;min-width:0}
+.rst-form-field{display:flex;flex-direction:column;gap:8px;min-width:0}
+.rst-form-label{font-size:13px;font-weight:600;color:var(--bmb-ink);padding:0}
+.rst-required{color:#9c4c2e}
+.rst-optional{font-weight:400;color:#5c6b62}
+.rst-form-hint{font-size:12px;line-height:1.5;color:#5c6b62;margin:0}
+.rst-form-error{font-size:12px;line-height:1.5;color:#9c4c2e;margin:0;font-weight:500}
+.rst-form-alert{margin:0}
+.rst-input{box-sizing:border-box;width:100%;min-height:46px;border:1px solid #d6ddd2;border-radius:12px;background:#fff;padding:11px 14px;font-size:14px;color:var(--bmb-ink);outline:0;transition:border-color .2s,box-shadow .2s}
+.rst-input:focus{border-color:#639922;box-shadow:0 0 0 3px #c0dd9780}
+.rst-input.is-big{font-size:20px;font-weight:600;letter-spacing:-.3px;max-width:280px}
+.rst-input:disabled{background:#f6f7f3;color:#8d948a}
+.rst-form-field.is-invalid .rst-input,
+.rst-form-field.is-invalid .rst-number-stepper,
+.rst-form-field.is-invalid .rst-category{border-color:#9c4c2e;background:#fdf6f2}
+.rst-form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}
+.rst-inline-group{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+
+/* Entero con - y + */
+.rst-number-stepper{display:inline-flex;align-items:center;gap:6px;border:1px solid #d6ddd2;border-radius:14px;background:#fff;padding:4px;align-self:flex-start}
+.rst-number-stepper button{display:grid;place-items:center;width:42px;height:42px;border-radius:10px;color:var(--bmb-green);transition:background .2s}
+.rst-number-stepper button:hover:not(:disabled){background:#eaf3de}
+.rst-number-stepper button:disabled{opacity:.35;cursor:not-allowed}
+.rst-number-stepper input{width:64px;border:0;background:transparent;text-align:center;font-size:20px;font-weight:600;color:var(--bmb-ink);outline:0;-moz-appearance:textfield}
+.rst-number-stepper input::-webkit-outer-spin-button,.rst-number-stepper input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+/* Fichas de eleccion (capacidad, ubicacion, filtro HU-104) */
+.rst-chips{display:flex;flex-wrap:wrap;gap:8px}
+.rst-choice{min-height:44px;min-width:44px;border:1px solid var(--bmb-line);border-radius:30px;background:#fff;padding:9px 16px;font-size:13px;font-weight:600;color:var(--bmb-green);transition:background .2s,border-color .2s}
+.rst-choice:hover:not(:disabled){background:#eaf3de}
+.rst-choice[aria-pressed=true]{background:var(--bmb-green);border-color:var(--bmb-green);color:#fff}
+.rst-choice:disabled{opacity:.5;cursor:not-allowed}
+
+/* Categorias como tarjetas (HU-113) */
+.rst-category-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.rst-category{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-height:92px;border:1px solid var(--bmb-line);border-radius:16px;background:#fff;padding:16px;text-align:left;color:var(--bmb-green);transition:background .2s,border-color .2s,transform .2s}
+.rst-category span{font-size:14px;font-weight:600;color:var(--bmb-ink)}
+.rst-category:hover:not(:disabled){transform:translateY(-2px);border-color:#97c459}
+.rst-category[aria-checked=true]{background:var(--bmb-lime);border-color:#97c459}
+.rst-money-input{display:flex;align-items:center;gap:8px}
+.rst-money-input>span{font-size:20px;font-weight:600;color:#5c6b62}
+
+/* Botones del formulario */
+.rst-form-actions{display:flex;flex-wrap:wrap;gap:10px;border-top:1px solid var(--bmb-line);padding-top:22px}
+.rst-form-actions .bmb-continue.rst-save{width:auto;margin-top:0;justify-content:center;min-height:46px;padding:13px 22px;font-size:13px;font-weight:600}
+.bmb-restaurante .rst-form-actions .rst-cancel{min-height:46px;padding:12px 20px;font-size:13px}
+
+/* Exito (CA-1) */
+.rst-register-done{align-items:flex-start;gap:14px}
+.rst-register-done h2{font-size:22px!important;letter-spacing:-.6px}
+.rst-done-icon{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:var(--bmb-lime);color:var(--bmb-green)}
+.rst-register-done .bmb-action,.rst-register-done .rst-ghost{min-height:44px;display:inline-flex;align-items:center}
+
+/* ---- Vista previa de la mesa (HU-102) ---- */
+.rst-preview-table{display:flex;flex-direction:column;align-items:center;gap:16px}
+.rst-table-art{display:flex;flex-direction:column;align-items:center;gap:10px;padding:8px 0}
+.rst-chair-row{display:flex;gap:12px;min-height:26px}
+.rst-table-middle{display:flex;align-items:center;gap:10px}
+.rst-chair-col{display:flex;flex-direction:column;gap:12px;min-width:26px}
+.rst-chair{display:block;border-radius:9px;background:var(--bmb-green)}
+.rst-chair.is-top,.rst-chair.is-bottom{width:42px;height:24px}
+.rst-chair.is-left,.rst-chair.is-right{width:24px;height:42px}
+.rst-table-top{display:grid;place-items:center;min-width:120px;min-height:120px;padding:0 12px;border-radius:22px;border:2px solid #c0dd97;background:#eaf3de;font-size:34px;font-weight:600;color:var(--bmb-green);box-sizing:border-box}
+.rst-table-top.is-long{min-width:180px}
+.rst-preview-caption{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.rst-preview-caption strong{font-size:22px;font-weight:600;letter-spacing:-.6px}
+.rst-preview-caption>span:not(.rst-chip){font-size:13px;color:#5c6b62}
+.rst-preview-caption .rst-chip{margin:4px 0 0}
+
+/* ---- Vista previa del producto (HU-113) ---- */
+.rst-preview-product{display:flex;flex-direction:column;gap:10px;border:1px solid var(--bmb-line);border-radius:18px;background:#fafcf4;padding:18px}
+.rst-preview-product-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.rst-preview-product-head strong{font-size:17px;font-weight:600;letter-spacing:-.3px;overflow-wrap:anywhere}
+.rst-preview-product .rst-chip{margin:0;white-space:nowrap}
+.rst-preview-price{font-size:26px;font-weight:550;letter-spacing:-1px}
+
+/* ---- Buscador de mesas (HU-104) ---- */
+.rst-table-search{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;padding-bottom:18px;margin-bottom:18px;border-bottom:1px solid var(--bmb-line)}
+.rst-table-search .rst-form-field{flex:0 1 200px}
+.rst-table-search .rst-search-capacity{flex:1 1 300px}
+.rst-table-search .rst-input{max-width:none}
+.rst-table-search-actions{display:flex;flex-wrap:wrap;gap:8px}
+.rst-table-search-actions .bmb-action,.bmb-restaurante .rst-table-search-actions .rst-ghost{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:11px 18px}
+.rst-search-echo{display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px;border-radius:30px;background:#eaf3de;padding:8px 14px;font-size:12px;font-weight:600;color:#3b6d11}
+.rst-empty .rst-search-criteria{font-size:12px;color:#5c6b62;margin:0}
+
+/* ---- HU-105: aviso de roles pendientes y campos de credenciales ---- */
+.rst-pending-feature{display:flex;gap:12px;align-items:flex-start;margin:16px 0 12px;border:1px solid #f0dcb4;border-radius:16px;background:#fdf6e6;padding:14px 16px;color:#6e4a10}
+.rst-pending-feature svg{flex-shrink:0;margin-top:1px}
+.rst-pending-feature strong{display:block;font-size:14px;font-weight:600;color:#5c3d0c}
+.rst-pending-feature p{margin:6px 0 0;font-size:12px;line-height:1.6}
+.rst-admin-form{display:flex;flex-direction:column;gap:14px;margin-top:14px}
+
+@media(max-width:640px){
+  .rst-preview{position:static}
+  .rst-input.is-big{max-width:none}
+  .rst-form-actions>*{flex:1 1 100%}
+}

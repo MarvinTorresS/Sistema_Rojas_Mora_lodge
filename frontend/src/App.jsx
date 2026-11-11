@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import {
-  UtensilsCrossed,
   Receipt,
   CircleCheck,
   Banknote,
@@ -25,6 +24,9 @@ import RestauranteMenu from './pages/RestauranteMenu.jsx';
 import RestauranteMesas from './pages/RestauranteMesas.jsx';
 import RestauranteCuentas from './pages/RestauranteCuentas.jsx';
 import RestauranteHuespedes from './pages/RestauranteHuespedes.jsx';
+import RegistrarMesa from './pages/RegistrarMesa.jsx';
+import RegistrarProducto from './pages/RegistrarProducto.jsx';
+import AtenderMesas from './pages/AtenderMesas.jsx';
 
 /**
  * Router principal de la aplicación.
@@ -79,12 +81,10 @@ function App() {
           <Route path="restaurante" element={<Restaurante />} />
           <Route path="restaurante/menu" element={<RestauranteMenu />} />
           <Route path="restaurante/mesas" element={<RestauranteMesas />} />
-          {/* HU-102 (Marvin): formulario de alta de mesa. El botón "Registrar
-              mesa" de HU-103 CA-2 ya apunta aquí. */}
-          <Route
-            path="restaurante/mesas/registrar"
-            element={<PantallaPendiente icon={UtensilsCrossed} titulo="Registrar mesa" huRelacionadas="HU-102" />}
-          />
+          {/* Sprint 4 — Marvin: HU-102 (registrar mesa; el botón "Registrar
+              mesa" de HU-103 CA-2 apunta aquí) y HU-113 (registrar producto). */}
+          <Route path="restaurante/mesas/registrar" element={<RegistrarMesa />} />
+          <Route path="restaurante/menu/registrar" element={<RegistrarProducto />} />
           <Route path="restaurante/cuentas" element={<RestauranteCuentas />} />
           <Route path="restaurante/huespedes" element={<RestauranteHuespedes />} />
           {/* Sprint 5 — Marvin */}
@@ -124,10 +124,8 @@ function App() {
           />
 
           {/* Tareas del Dashboard sin módulo propio (todavía) */}
-          <Route
-            path="tareas/mesa"
-            element={<PantallaPendiente icon={UtensilsCrossed} titulo="Abrir cuenta de mesa" huRelacionadas="HU-024" />}
-          />
+          {/* HU-024 (Marvin, Sprint 4): abrir cuenta de mesa. */}
+          <Route path="tareas/mesa" element={<AtenderMesas />} />
           <Route
             path="tareas/factura"
             element={<PantallaPendiente icon={Receipt} titulo="Cobrar y facturar" huRelacionadas="HU-028, HU-040" />}

@@ -1,0 +1,367 @@
+{
+  "info": {
+    "name": "HU-007 - Consultar disponibilidad del salon (prueba funcional)",
+    "description": "Prueba funcional de HU-007 (Rojas Mora Sports & Lodge). Ejecutar EN ORDEN dentro de la carpeta: CA-2 depende de la reserva real creada en su paso de arreglo (arrange). Requiere: docker compose up (MySQL), pnpm run migrate, pnpm run seed, pnpm run dev (backend en http://localhost:4000).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "HU-007 - Consultar disponibilidad del salon",
+      "item": [
+        {
+          "name": "CA-1 - Consulta exitosa",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 2);",
+                  "d.setHours(9, 0, 0, 0);",
+                  "const start = new Date(d);",
+                  "const end = new Date(d.getTime() + 2 * 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('ca1_start', start.toISOString());",
+                  "pm.collectionVariables.set('ca1_end', end.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('available true, reason null', () => {",
+                  "  pm.expect(body.data.available).to.eql(true);",
+                  "  pm.expect(body.data.reason).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hall-bookings/availability?resourceId=2&startDatetime={{ca1_start}}&endDatetime={{ca1_end}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "hall-bookings", "availability" ],
+              "query": [
+                { "key": "resourceId", "value": "2" },
+                { "key": "startDatetime", "value": "{{ca1_start}}" },
+                { "key": "endDatetime", "value": "{{ca1_end}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "CA-2a - Preparar una reserva real de salon (HU-013)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 3);",
+                  "d.setHours(14, 0, 0, 0);",
+                  "const start = new Date(d);",
+                  "const end = new Date(d.getTime() + 6 * 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('ca2_start', start.toISOString());",
+                  "pm.collectionVariables.set('ca2_end', end.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 (reserva de salon creada)', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 2,\n  \"planId\": 1,\n  \"customerName\": \"Sofia Araya Blanco\",\n  \"customerPhone\": \"88883333\",\n  \"startDatetime\": \"{{ca2_start}}\",\n  \"endDatetime\": \"{{ca2_end}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/hall-bookings", "host": [ "{{baseUrl}}" ], "path": [ "api", "hall-bookings" ] },
+            "description": "Paso previo de arreglo (arrange), NO es el caso bajo prueba: usa el endpoint ya implementado de HU-013 para dejar una reserva de salon real y vigente en ese horario. CA-2 se prueba en la siguiente peticion, consultando disponibilidad para un horario que se cruza con esta reserva."
+          }
+        },
+        {
+          "name": "CA-2b - Salon no disponible (reserva confirmada en ese horario)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ca2Start = new Date(pm.collectionVariables.get('ca2_start'));",
+                  "const start = new Date(ca2Start.getTime() + 60 * 60 * 1000);",
+                  "const end = new Date(start.getTime() + 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('ca2b_start', start.toISOString());",
+                  "pm.collectionVariables.set('ca2b_end', end.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('available false, reserva confirmada', () => {",
+                  "  pm.expect(body.data.available).to.eql(false);",
+                  "  pm.expect(body.data.reason).to.eql('El salon ya tiene una reserva confirmada en ese horario.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hall-bookings/availability?resourceId=2&startDatetime={{ca2b_start}}&endDatetime={{ca2b_end}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "hall-bookings", "availability" ],
+              "query": [
+                { "key": "resourceId", "value": "2" },
+                { "key": "startDatetime", "value": "{{ca2b_start}}" },
+                { "key": "endDatetime", "value": "{{ca2b_end}}" }
+              ]
+            },
+            "description": "Horario dentro de la ventana 14:00-20:00 de la reserva creada en CA-2a: se solapa a proposito, para forzar el conflicto real contra la base de datos."
+          }
+        },
+        {
+          "name": "CA-4 - Fecha fuera de rango permitido (fecha pasada)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() - 2);",
+                  "d.setHours(10, 0, 0, 0);",
+                  "const start = new Date(d);",
+                  "const end = new Date(d.getTime() + 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('ca4_start', start.toISOString());",
+                  "pm.collectionVariables.set('ca4_end', end.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensaje de fecha ya paso', () => {",
+                  "  pm.expect(pm.response.json().error.message).to.eql('No se puede consultar disponibilidad para una fecha u hora que ya paso.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hall-bookings/availability?resourceId=2&startDatetime={{ca4_start}}&endDatetime={{ca4_end}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "hall-bookings", "availability" ],
+              "query": [
+                { "key": "resourceId", "value": "2" },
+                { "key": "startDatetime", "value": "{{ca4_start}}" },
+                { "key": "endDatetime", "value": "{{ca4_end}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "CA-5 - Fecha con anticipacion excesiva",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 45);",
+                  "d.setHours(10, 0, 0, 0);",
+                  "const start = new Date(d);",
+                  "const end = new Date(d.getTime() + 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('ca5_start', start.toISOString());",
+                  "pm.collectionVariables.set('ca5_end', end.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensaje de anticipacion excesiva', () => {",
+                  "  pm.expect(pm.response.json().error.message).to.eql('Solo se puede consultar disponibilidad hasta 30 dias de anticipacion.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hall-bookings/availability?resourceId=2&startDatetime={{ca5_start}}&endDatetime={{ca5_end}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "hall-bookings", "availability" ],
+              "query": [
+                { "key": "resourceId", "value": "2" },
+                { "key": "startDatetime", "value": "{{ca5_start}}" },
+                { "key": "endDatetime", "value": "{{ca5_end}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Caso limite - Campos obligatorios incompletos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "const body = pm.response.json();",
+                  "pm.test('Detalla los campos faltantes', () => {",
+                  "  const fields = body.error.details.map((d) => d.field);",
+                  "  pm.expect(fields).to.include.members(['startDatetime', 'endDatetime']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hall-bookings/availability?resourceId=2",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "hall-bookings", "availability" ],
+              "query": [
+                { "key": "resourceId", "value": "2" }
+              ]
+            },
+            "description": "Faltan startDatetime y endDatetime a proposito: prueba la capa de validador (checkAvailabilityRules), no cubierta por la prueba unitaria del service."
+          }
+        },
+        {
+          "name": "Caso limite - Recurso inexistente",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 2);",
+                  "d.setHours(10, 0, 0, 0);",
+                  "const start = new Date(d);",
+                  "const end = new Date(d.getTime() + 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('inexistente_start', start.toISOString());",
+                  "pm.collectionVariables.set('inexistente_end', end.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Mensaje de salon inexistente', () => {",
+                  "  pm.expect(pm.response.json().error.message).to.eql('El salon indicado no existe.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hall-bookings/availability?resourceId=999&startDatetime={{inexistente_start}}&endDatetime={{inexistente_end}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "hall-bookings", "availability" ],
+              "query": [
+                { "key": "resourceId", "value": "999" },
+                { "key": "startDatetime", "value": "{{inexistente_start}}" },
+                { "key": "endDatetime", "value": "{{inexistente_end}}" }
+              ]
+            },
+            "description": "resourceId=999 no existe en la tabla resources (los sembrados son 1=cancha y 2=salon)."
+          }
+        },
+        {
+          "name": "Caso limite - Rango invertido (fin no posterior al inicio)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 2);",
+                  "d.setHours(10, 0, 0, 0);",
+                  "pm.collectionVariables.set('invertido_start', d.toISOString());",
+                  "pm.collectionVariables.set('invertido_end', d.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensaje de rango invertido', () => {",
+                  "  pm.expect(pm.response.json().error.message).to.eql('La hora de fin debe ser posterior a la hora de inicio.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/hall-bookings/availability?resourceId=2&startDatetime={{invertido_start}}&endDatetime={{invertido_end}}",
+              "host": [ "{{baseUrl}}" ],
+              "path": [ "api", "hall-bookings", "availability" ],
+              "query": [
+                { "key": "resourceId", "value": "2" },
+                { "key": "startDatetime", "value": "{{invertido_start}}" },
+                { "key": "endDatetime", "value": "{{invertido_end}}" }
+              ]
+            },
+            "description": "startDatetime == endDatetime: el service rechaza porque end <= start."
+          }
+        }
+      ]
+    }
+  ]
+}

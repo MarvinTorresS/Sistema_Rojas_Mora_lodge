@@ -43,8 +43,35 @@ async function request(call, fallbackMessage) {
 }
 
 // HU-103 -- { data: mesas ordenadas por numero, meta: { total, activeTotal, inactiveTotal, totalCapacity } }
-export function listRestaurantTables() {
-  return request(async () => (await api.get(TABLES_PATH)).data, 'No se pudieron cargar las mesas.');
+// HU-104 (Marvin) -- filtros opcionales { number, minSeats }. Sin filtros la
+// peticion es identica a la de HU-103; con filtros el meta agrega
+// matchedTotal y filters (los totales siguen siendo de todo el catalogo).
+export function listRestaurantTables(filters = null) {
+  return request(
+    async () => (await (filters ? api.get(TABLES_PATH, { params: filters }) : api.get(TABLES_PATH))).data,
+    'No se pudieron cargar las mesas.',
+  );
+}
+
+// HU-102 (Marvin) -- { data: mesa creada, message: "Mesa registrada exitosamente" }.
+export function createRestaurantTable({ tableNumber, seatCount, location }) {
+  return request(
+    async () => (await api.post(TABLES_PATH, {
+      tableNumber, seatCount, location: location || null, userId: RESTAURANT_USER_ID,
+    })).data,
+    'No se pudo registrar la mesa.',
+  );
+}
+
+// HU-024 (Marvin) -- abre la cuenta de una mesa. seenTableStatus es el estado
+// que el mesero VEIA en pantalla: con el, el backend distingue CA-2 (otro
+// mesero se adelanto) de CA-3 (la mesa ya estaba ocupada).
+// Devuelve { data: { account, table }, message }.
+export function openTableAccount({ tableId, seenTableStatus }) {
+  return request(
+    async () => (await api.post(ACCOUNTS_PATH, { tableId, seenTableStatus, userId: RESTAURANT_USER_ID })).data,
+    'No se pudo abrir la cuenta de la mesa.',
+  );
 }
 
 // HU-106 -- el backend exige `confirmed: true` (la confirmacion ya ocurrio en pantalla).

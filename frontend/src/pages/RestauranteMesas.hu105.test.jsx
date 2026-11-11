@@ -12,7 +12,7 @@ const list = (data) => ({ data: { data, meta: { total: data.length, activeTotal:
 const failure = (status, message, code) => ({ response: { status, data: { error: { message, code } } } });
 
 beforeEach(() => { vi.resetAllMocks(); api.get.mockResolvedValue(list([table])); });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 
 async function open() {
   render(<MemoryRouter><RestauranteMesas /></MemoryRouter>);
@@ -26,6 +26,9 @@ function credentials() {
 const confirm = () => fireEvent.click(screen.getByRole('button', { name: 'Sí, eliminar permanentemente' }));
 
 describe('HU-105 confirmación y autorización de eliminación', () => {
+  // Flujo con credenciales: se enciende cuando existan usuarios y roles (Sprint 5).
+  beforeEach(() => { vi.stubEnv('VITE_ADMIN_AUTH_ENABLED', 'true'); });
+
   it('abrir y cancelar no envía DELETE ni desactiva; las credenciales se descartan', async () => {
     await open(); credentials();
     expect(api.delete).not.toHaveBeenCalled();
@@ -95,5 +98,27 @@ describe('HU-105 confirmación y autorización de eliminación', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
     resolve({ data: { data: { tableId: 1 } } });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+});
+
+describe('HU-105 mientras no existen roles y permisos', () => {
+  it('avisa que roles y permisos no están implementados, no pide credenciales ni elimina', async () => {
+    await open();
+    expect(screen.getByRole('status').textContent).toContain('La gestión de roles y permisos todavía no está implementada');
+    expect(screen.queryByLabelText('Correo del Administrador')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Sí, eliminar permanentemente' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it('ofrece desactivar la mesa activa usando el flujo de HU-106', async () => {
+    api.post.mockResolvedValue({ data: { data: { ...table, status: 'inactive' } } });
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: 'Desactivar la mesa' }));
+    await screen.findByRole('dialog', { name: 'Desactivar mesa' });
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, desactivar' }));
+    await screen.findByText(/Mesa 1 desactivada/);
+    expect(api.delete).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,59 @@
+/* HU-024 (Marvin, Sprint 4) - Atender mesas: panel de mesas por estado y
+   apertura de cuenta. Mismo lenguaje que .bombonera / .rst-*.
+   Los estados se distinguen por relleno, borde Y texto (no solo por color). */
+
+.rst-service-layout{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.rst-service-board{flex:999 1 560px;min-width:0}
+.rst-open-panel{flex:1 1 300px;min-width:0;display:flex;flex-direction:column;gap:16px;position:sticky;top:18px}
+.rst-open-panel .bmb-kicker{margin-bottom:0}
+
+/* Leyenda */
+.rst-legend{display:flex;flex-wrap:wrap;gap:14px;list-style:none;margin:0;padding:0;font-size:12px;color:#4f5a53}
+.rst-legend li{display:flex;align-items:center;gap:6px}
+.rst-legend-swatch{width:14px;height:14px;border-radius:4px}
+.rst-legend-swatch.is-available{background:#fff;border:2px solid #639922}
+.rst-legend-swatch.is-occupied{background:#9c4c2e}
+.rst-legend-swatch.is-inactive{background:#e3e6e1}
+
+/* Mosaicos */
+.rst-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;list-style:none;margin:0;padding:0}
+.rst-tile{display:flex;flex-direction:column;justify-content:space-between;gap:16px;width:100%;min-height:124px;border-radius:18px;padding:16px;text-align:left;transition:transform .2s,box-shadow .2s}
+.rst-tile:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 16px #27500a14}
+.rst-tile-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;width:100%}
+.rst-tile-top strong{font-size:26px;font-weight:600;letter-spacing:-.8px;line-height:1}
+.rst-tile-top small{font-size:12px}
+.rst-tile-state{font-size:12px;font-weight:600}
+.rst-tile.is-available{background:#fff;border:2px solid #639922;color:var(--bmb-ink)}
+.rst-tile.is-occupied{background:#9c4c2e;border:2px solid #9c4c2e;color:#fff}
+.rst-tile.is-inactive{background:repeating-linear-gradient(-45deg,#eceeea,#eceeea 6px,#f4f5f2 6px,#f4f5f2 12px);border:2px solid #e3e6e1;color:#4f5a53;cursor:not-allowed}
+.rst-tile[aria-pressed=true]{background:var(--bmb-lime);border-color:var(--bmb-green);color:var(--bmb-ink);box-shadow:0 0 0 3px #27500a22}
+
+/* Panel lateral */
+.rst-open-table{display:flex;align-items:center;gap:14px}
+.rst-open-table strong{display:block;font-size:18px;font-weight:600}
+.rst-open-table div>span{font-size:12px;color:#5c6b62}
+.rst-open-badge{display:grid;place-items:center;flex-shrink:0;width:58px;height:58px;border-radius:16px;font-size:24px;font-weight:600}
+.rst-open-badge.is-available{background:var(--bmb-lime);color:var(--bmb-ink)}
+.rst-open-badge.is-occupied{background:#9c4c2e;color:#fff}
+.rst-open-facts{display:grid;gap:12px;margin:0;font-size:13px}
+.rst-open-facts>div{display:flex;justify-content:space-between;gap:12px}
+.rst-open-facts dt{color:#5c6b62}
+.rst-open-facts dd{margin:0;font-weight:600;text-align:right}
+.rst-open-facts dd.is-occupied{color:#9c4c2e}
+.rst-open-panel .rst-alert-text{margin:0;font-weight:600}
+.rst-open-cta{margin-top:4px!important;min-height:48px;text-decoration:none}
+.bmb-restaurante .rst-open-secondary{justify-content:center;min-height:44px}
+.rst-done-badge{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:var(--bmb-lime);color:var(--bmb-green)}
+.rst-open-success{font-size:20px!important;letter-spacing:-.5px;margin:0}
+
+/* CA-2: aviso cuando otro mesero se adelanto */
+.rst-race-alert{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:0 0 20px;border-radius:16px;background:#173404;color:#fff;padding:14px 18px;font-size:13px;line-height:1.6;box-shadow:0 12px 30px #17340440}
+.rst-race-alert strong{font-weight:600}
+.rst-race-alert>span:nth-child(2){flex:1 1 280px}
+.rst-race-alert a{color:var(--bmb-lime);font-weight:600;white-space:nowrap}
+.rst-race-icon{display:grid;place-items:center;flex-shrink:0;width:28px;height:28px;border-radius:50%;background:#9c4c2e;font-weight:700}
+
+@media(max-width:640px){
+  .rst-open-panel{position:static}
+  .rst-tiles{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+}

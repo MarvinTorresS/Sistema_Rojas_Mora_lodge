@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Plus } from 'lucide-react';
 import EncabezadoRestaurante from '../components/restaurante/EncabezadoRestaurante';
 import { listMenuProducts } from '../services/productosMenuService';
 import { money } from '../utils/restaurante';
@@ -27,7 +29,11 @@ export default function RestauranteMenu() {
     <div className="bombonera bmb-salon bmb-restaurante">
       <div className="bmb-content">
         <EncabezadoRestaurante kicker="Restaurante" title="Productos del menú"
-          text="Consultá precios, existencias y disponibilidad de los productos registrados." />
+          text="Consultá precios, existencias y disponibilidad de los productos registrados."
+          actions={(
+            // HU-113 (Marvin): acceso al formulario de registro de productos.
+            <Link to="/restaurante/menu/registrar" className="bmb-pill-link"><Plus size={16} aria-hidden="true" />Registrar producto</Link>
+          )} />
         <section className="bmb-card rst-panel" aria-label="Catálogo del menú">
           <form className="rst-filters" role="search" onSubmit={(event) => {
             event.preventDefault();

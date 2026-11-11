@@ -10,6 +10,7 @@
 const express = require('express');
 const controller = require('./cuentasMesa.controller');
 const {
+  openAccountRules,
   updateItemQuantityRules,
   addItemsRules, accountIdRules, searchGuestsRules, guestConsumptionRules, guestBalanceRules,
 } = require('./cuentasMesa.validator');
@@ -30,6 +31,10 @@ router.post('/guest-consumption', guestConsumptionRules, controller.registerGues
 
 // Cuentas abiertas (para elegir a cual agregar productos).
 router.get('/', controller.listOpenAccounts);
+
+// HU-024 (Marvin) - Abrir la cuenta de una mesa.
+// Body: { tableId, seenTableStatus?, userId }.
+router.post('/', openAccountRules, controller.openAccount);
 
 router.get('/:accountId', accountIdRules, controller.getAccount);
 

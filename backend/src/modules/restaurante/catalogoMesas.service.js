@@ -3,6 +3,9 @@
 // Catalogo de mesas del restaurante - Sprint 4 (Alison):
 //   HU-103  Consultar el listado de mesas.
 //   HU-106  Desactivar una mesa.
+// Sprint 4 (Marvin):
+//   HU-102  Registrar una nueva mesa.
+//   HU-104  Buscar mesa por numero o capacidad (filtros de listTables).
 //
 // Esta capa no sabe nada de HTTP: recibe datos ya validados en su forma y
 // lanza DomainError (con statusCode y code) cuando una regla de NEGOCIO
@@ -13,7 +16,42 @@ const { verifyTableAdministrator } = require('./tableAdminApproval.service');
 const { DomainError } = require('../../utils/domainError.util');
 const {
   MESSAGES, CODES, compareTableNumbers, mapTable,
+  normalizeTableNumber, isValidTableNumber, MIN_SEATS, MAX_SEATS, TABLE_LOCATION_MAX_LENGTH,
 } = require('./restaurante.util');
+const { assertActingUser } = require('./usuarioResponsable.service');
+
+const TABLE_NUMBER_FORMAT_MESSAGE = 'El número de mesa admite hasta 10 letras, dígitos o guiones.';
+const SEAT_COUNT_MESSAGE = `La capacidad debe ser un número entero entre ${MIN_SEATS} y ${MAX_SEATS}.`;
+const MIN_SEATS_MESSAGE = `La capacidad mínima debe ser un número entero entre ${MIN_SEATS} y ${MAX_SEATS}.`;
+const LOCATION_MESSAGE = `La ubicación admite hasta ${TABLE_LOCATION_MAX_LENGTH} caracteres.`;
+
+const isBlank = (value) => value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
+
+// Entero desde un numero o un texto de solo digitos (4 o "4"). null si no lo es.
+function toInteger(value) {
+  if (typeof value === 'number') return Number.isInteger(value) ? value : null;
+  if (typeof value === 'string' && /^\s*\d{1,6}\s*$/.test(value)) return Number(value);
+  return null;
+}
+
+// HU-104: criterios de busqueda normalizados. Devuelve null si no llega
+// ninguno, para que listTables responda exactamente como en HU-103.
+function normalizeTableFilters({ number, minSeats } = {}) {
+  const filters = {};
+  const details = [];
+  if (!isBlank(number)) {
+    const normalized = normalizeTableNumber(number);
+    if (isValidTableNumber(normalized)) filters.number = normalized;
+    else details.push({ field: 'number', message: TABLE_NUMBER_FORMAT_MESSAGE });
+  }
+  if (!isBlank(minSeats)) {
+    const seats = toInteger(minSeats);
+    if (seats !== null && seats >= MIN_SEATS && seats <= MAX_SEATS) filters.minSeats = seats;
+    else details.push({ field: 'minSeats', message: MIN_SEATS_MESSAGE });
+  }
+  if (details.length) throw new DomainError(details[0].message, 422, { details });
+  return Object.keys(filters).length ? filters : null;
+}
 
 // ---------------------------------------------------------------------
 // HU-103 - Consultar el listado de mesas.
@@ -24,18 +62,130 @@ const {
 //         "Registrar mesa".
 // `capacidad total instalada` (razon de la HU) = suma de los comensales de
 // las mesas ACTIVAS: una mesa retirada de servicio ya no es capacidad.
+//
+// HU-104 (Marvin) - Buscar mesa por numero o capacidad. Filtros opcionales
+// y combinables:
+//   number    numero exacto, con la normalizacion de HU-102 ("05" = "5").
+//   minSeats  capacidad minima (seatCount >= minSeats).
+//   CA-1: items = solo las mesas que coinciden (activas e inactivas).
+//   CA-2: sin coincidencias -> items = [] (NO es un error); el frontend
+//         muestra MESSAGES.TABLES_NOT_FOUND.
+// Los totales se calculan sobre TODO el catalogo; con filtros se agregan
+// `matchedTotal` y `filters` (eco normalizado). Sin filtros la respuesta es
+// identica a la de HU-103.
 // ---------------------------------------------------------------------
-async function listTables() {
+async function listTables(criteria = {}) {
+  const filters = normalizeTableFilters(criteria);
   const rows = await RestaurantTable.findAll();
-  const items = rows.map(mapTable).sort((a, b) => compareTableNumbers(a.tableNumber, b.tableNumber));
-  const active = items.filter((table) => table.isActive);
-  return {
-    items,
-    total: items.length,
+  const all = rows.map(mapTable).sort((a, b) => compareTableNumbers(a.tableNumber, b.tableNumber));
+  const active = all.filter((table) => table.isActive);
+  const summary = {
+    total: all.length,
     activeTotal: active.length,
-    inactiveTotal: items.length - active.length,
+    inactiveTotal: all.length - active.length,
     totalCapacity: active.reduce((sum, table) => sum + Number(table.seatCount || 0), 0),
   };
+  if (!filters) return { items: all, ...summary };
+
+  const items = all.filter((table) => (
+    (filters.number === undefined || normalizeTableNumber(table.tableNumber) === filters.number)
+    && (filters.minSeats === undefined || Number(table.seatCount) >= filters.minSeats)
+  ));
+  return { items, ...summary, matchedTotal: items.length, filters };
+}
+
+// ---------------------------------------------------------------------
+// HU-102 (Marvin) - Registrar una nueva mesa.
+//   CA-1: numero nuevo -> crea la mesa "Disponible" (Resource + mesa 1:1).
+//   CA-2: numero repetido -> 409 TABLE_NUMBER_DUPLICATE, no guarda nada.
+//   CA-3: falta numero o capacidad -> 422 REQUIRED_FIELDS con un detalle
+//         por campo (el frontend los marca en rojo).
+//   CA-4: cancelar es solo del frontend.
+// ---------------------------------------------------------------------
+function normalizeNewTable({ tableNumber, seatCount, location } = {}) {
+  const required = [];
+  const invalid = [];
+
+  const number = normalizeTableNumber(tableNumber);
+  if (isBlank(tableNumber)) {
+    required.push({ field: 'tableNumber', message: 'El número de mesa es obligatorio.' });
+  } else if (!isValidTableNumber(number)) {
+    invalid.push({ field: 'tableNumber', message: TABLE_NUMBER_FORMAT_MESSAGE });
+  }
+
+  const seats = toInteger(seatCount);
+  if (isBlank(seatCount)) {
+    required.push({ field: 'seatCount', message: 'La capacidad (comensales) es obligatoria.' });
+  } else if (seats === null || seats < MIN_SEATS || seats > MAX_SEATS) {
+    invalid.push({ field: 'seatCount', message: SEAT_COUNT_MESSAGE });
+  }
+
+  let place = null;
+  if (location !== undefined && location !== null) {
+    const text = typeof location === 'string' ? location.trim().replace(/\s+/g, ' ') : null;
+    if (text === null || text.length > TABLE_LOCATION_MAX_LENGTH) {
+      invalid.push({ field: 'location', message: LOCATION_MESSAGE });
+    } else {
+      place = text || null;
+    }
+  }
+
+  // CA-3 manda: si falta algun obligatorio, el mensaje general es el de la
+  // historia y los demas errores de formato van en details.
+  if (required.length) {
+    throw new DomainError(MESSAGES.REQUIRED_FIELDS, 422, {
+      code: CODES.REQUIRED_FIELDS, details: [...required, ...invalid],
+    });
+  }
+  if (invalid.length) throw new DomainError(invalid[0].message, 422, { details: invalid });
+  return { tableNumber: number, seatCount: seats, location: place };
+}
+
+function duplicateTableError(tableNumber, tableId) {
+  return new DomainError(MESSAGES.TABLE_NUMBER_DUPLICATE, 409, {
+    code: CODES.TABLE_NUMBER_DUPLICATE,
+    details: { tableNumber, ...(tableId ? { tableId } : {}) },
+  });
+}
+
+async function createTable(input = {}) {
+  const values = normalizeNewTable(input);
+  try {
+    return await sequelize.transaction(async (transaction) => {
+      const userId = await assertActingUser(input.userId ?? null, { transaction, required: false });
+
+      // CA-2: chequeo previo, para responder sin intentar el INSERT.
+      const existing = await RestaurantTable.findOne({ where: { tableNumber: values.tableNumber }, transaction });
+      if (existing) throw duplicateTableError(values.tableNumber, existing.tableId);
+
+      const resource = await Resource.create({
+        resourceType: 'restaurant_table',
+        name: `Mesa ${values.tableNumber}`,
+        status: 'available',
+      }, { transaction });
+      const table = await RestaurantTable.create({
+        resourceId: resource.resourceId,
+        tableNumber: values.tableNumber,
+        seatCount: values.seatCount,
+        location: values.location,
+        status: 'available',
+      }, { transaction });
+      await AuditLog.create({
+        userId,
+        action: 'restaurant_table_created',
+        entityType: 'restaurant_table',
+        entityId: table.tableId,
+        details: JSON.stringify({ ...values, resourceId: resource.resourceId }),
+      }, { transaction });
+      return mapTable(table);
+    });
+  } catch (error) {
+    // Dos administradores registrando el mismo numero a la vez: el indice
+    // UNIQUE(table_number) rechaza al segundo; la transaccion ya se revirtio
+    // (no queda un Resource huerfano).
+    if (error.name === 'SequelizeUniqueConstraintError') throw duplicateTableError(values.tableNumber);
+    throw error;
+  }
 }
 
 // Resource antes de RestaurantTable: mismo orden que los flujos de reservas.
@@ -146,4 +296,6 @@ async function deactivateTable(tableId, { confirmed, userId = null } = {}) {
   });
 }
 
-module.exports = { listTables, deactivateTable, deleteTable };
+module.exports = {
+  listTables, deactivateTable, deleteTable, createTable, normalizeTableFilters,
+};

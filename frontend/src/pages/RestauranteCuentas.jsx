@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { RotateCcw } from 'lucide-react';
 import EncabezadoRestaurante from '../components/restaurante/EncabezadoRestaurante';
 import { PedidoPendiente, SelectorProductos } from '../components/restaurante/ProductosPedido';
@@ -57,6 +57,19 @@ export default function RestauranteCuentas() {
   }, []);
 
   useEffect(() => { loadAccounts(); loadMenu(); }, [loadAccounts, loadMenu]);
+
+  // HU-024 (Marvin): "Tomar el pedido" / "Unir el pedido a la cuenta abierta"
+  // llegan con ?cuenta=<id>; esa cuenta se abre sola una vez al entrar.
+  const [searchParams] = useSearchParams();
+  const requestedAccount = Number(searchParams.get('cuenta'));
+  const preselected = useRef(false);
+  useEffect(() => {
+    if (preselected.current || !Number.isSafeInteger(requestedAccount) || requestedAccount < 1) return;
+    preselected.current = true;
+    openAccount(requestedAccount);
+    // openAccount se recrea en cada render; solo importa el id pedido.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedAccount]);
 
   async function openAccount(accountId) {
     if (sending.current) return;

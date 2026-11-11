@@ -66,7 +66,23 @@ const guestBalanceRules = [
   handleValidationErrors,
 ];
 
+// HU-024 (Marvin) - Abrir la cuenta de una mesa.
+// seenTableStatus: estado que el mesero veia en pantalla (distingue CA-2 de
+// CA-3). userId: temporal hasta la autenticacion del Sprint 5.
+const openAccountRules = [
+  body('tableId').exists({ values: 'null' }).withMessage('Seleccione la mesa.').bail()
+    .custom((value) => Number.isSafeInteger(value) && value >= 1)
+    .withMessage('Seleccione una mesa válida.'),
+  body('seenTableStatus').optional({ values: 'null' }).isIn(['available', 'occupied'])
+    .withMessage('El estado visto de la mesa debe ser available u occupied.'),
+  body('userId').exists({ values: 'null' }).withMessage('No se pudo identificar al usuario que realiza la operación.').bail()
+    .custom((value) => Number.isSafeInteger(value) && value >= 1)
+    .withMessage('El usuario debe ser un entero positivo.'),
+  handleValidationErrors,
+];
+
 module.exports = {
+  openAccountRules,
   updateItemQuantityRules,
   addItemsRules, accountIdRules, searchGuestsRules, guestConsumptionRules, guestBalanceRules,
 };

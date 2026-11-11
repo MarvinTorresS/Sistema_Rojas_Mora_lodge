@@ -30,6 +30,12 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       field: 'seat_count',
     },
+    // HU-102: ubicacion opcional (ej. "Terraza"). NULL = sin ubicacion.
+    location: {
+      type: DataTypes.STRING(60),
+      allowNull: true,
+      field: 'location',
+    },
     status: {
       type: DataTypes.ENUM('available', 'occupied', 'inactive'),
       allowNull: false,

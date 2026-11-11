@@ -2,7 +2,9 @@
 
 const pedido = require('./cuentaPedido.service');
 const huesped = require('./consumoHuesped.service');
+const apertura = require('./cuentaApertura.service');
 const { actingUserId } = require('./catalogoMesas.controller');
+const { MESSAGES } = require('./restaurante.util');
 
 async function listOpenAccounts(req, res, next) {
   try {
@@ -72,7 +74,20 @@ async function getGuestBalance(req, res, next) {
   catch (error) { return next(error); }
 }
 
+// HU-024 (Marvin) - Abrir la cuenta de una mesa disponible.
+async function openAccount(req, res, next) {
+  try {
+    const data = await apertura.openTableAccount({
+      tableId: req.body.tableId,
+      seenTableStatus: req.body.seenTableStatus ?? undefined,
+      userId: actingUserId(req),
+    });
+    return res.status(201).json({ data, message: MESSAGES.ACCOUNT_OPENED });
+  } catch (error) { return next(error); }
+}
+
 module.exports = {
+  openAccount,
   updateItemQuantity,
   listOpenAccounts, listMenu, getAccount, addItems, searchGuests, registerGuestConsumption, getGuestBalance,
 };

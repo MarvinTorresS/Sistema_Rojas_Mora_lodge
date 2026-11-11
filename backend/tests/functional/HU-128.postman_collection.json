@@ -1,0 +1,557 @@
+{
+  "info": {
+    "name": "HU-128 - Editar tarifa por noche de cabina (prueba funcional)",
+    "description": "Prueba funcional de HU-128 (Rojas Mora Sports & Lodge). Requiere el backend y la base de datos migrada y sembrada (incluido el seeder de cabinas). Se trabaja siempre sobre la Cabina 2 (resourceId 4, tarifa de arranque ₡55 000). Orden: Preparación, CA-1, CA-2, CA-3 y Restaurar. CA-4 (cancelar) no se prueba aquí: es solo de pantalla.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Preparación",
+      "item": [
+        {
+          "name": "Preparación - Listar cabinas con su tarifa",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "No es evidencia de ningún CA: muestra las tarifas de arranque.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preparación - Reserva R con la tarifa anterior (Cabina 2 a ₡55 000)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "No es evidencia de ningún CA: reserva de 2 noches registrada con la tarifa anterior (total ₡110 000).",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 4,\n  \"guestName\": \"Roberto Salas Umaña\",\n  \"guestIdentification\": \"801230008\",\n  \"guestPhone\": \"81112222\",\n  \"guestEmail\": \"roberto.salas@example.com\",\n  \"checkInDate\": \"2027-04-01\",\n  \"checkOutDate\": \"2027-04-03\",\n  \"companions\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('bookingR', pm.response.json().data.booking.bookingId);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CA-1 - Edición exitosa",
+      "item": [
+        {
+          "name": "CA-1a - Editar la tarifa de la Cabina 2 a ₡60 000",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Cabina 2 pasa de ₡55 000 a ₡60 000.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins/4/rate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins",
+                "4",
+                "rate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pricePerNight\": 60000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('Tarifa actualizada y anterior informada', () => {",
+                  "  pm.expect(d.changed).to.eql(true);",
+                  "  pm.expect(d.cabin.pricePerNight).to.eql(60000);",
+                  "  pm.expect(d.previousPricePerNight).to.eql(55000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-1b - Verificar la tarifa en el listado",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const cabin = pm.response.json().data.find((c) => c.resourceId === 4);",
+                  "pm.test('El listado muestra la tarifa nueva', () => pm.expect(cabin.pricePerNight).to.eql(60000));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CA-2 - Tarifa inválida",
+      "item": [
+        {
+          "name": "CA-2a - Tarifa en cero",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "pricePerNight = 0.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins/4/rate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins",
+                "4",
+                "rate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pricePerNight\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "const e = pm.response.json().error;",
+                  "pm.test('Mensaje de tarifa inválida', () => {",
+                  "  pm.expect(e.message).to.eql('La tarifa debe ser un monto mayor a cero');",
+                  "  pm.expect(e.details[0].field).to.eql('pricePerNight');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-2b - Tarifa negativa",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "pricePerNight = -5000.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins/4/rate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins",
+                "4",
+                "rate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pricePerNight\": -5000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "const e = pm.response.json().error;",
+                  "pm.test('Mensaje de tarifa inválida', () => {",
+                  "  pm.expect(e.message).to.eql('La tarifa debe ser un monto mayor a cero');",
+                  "  pm.expect(e.details[0].field).to.eql('pricePerNight');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-2c - Tarifa vacía",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "pricePerNight = \"\" (texto vacío).",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins/4/rate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins",
+                "4",
+                "rate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pricePerNight\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "const e = pm.response.json().error;",
+                  "pm.test('Mensaje de tarifa inválida', () => {",
+                  "  pm.expect(e.message).to.eql('La tarifa debe ser un monto mayor a cero');",
+                  "  pm.expect(e.details[0].field).to.eql('pricePerNight');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-2d - Tarifa no numérica",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "pricePerNight = \"abc\".",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins/4/rate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins",
+                "4",
+                "rate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pricePerNight\": \"abc\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "const e = pm.response.json().error;",
+                  "pm.test('Mensaje de tarifa inválida', () => {",
+                  "  pm.expect(e.message).to.eql('La tarifa debe ser un monto mayor a cero');",
+                  "  pm.expect(e.details[0].field).to.eql('pricePerNight');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-2e - Verificar que la tarifa no cambió",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Tras los 4 rechazos, la Cabina 2 conserva la tarifa de CA-1.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const cabin = pm.response.json().data.find((c) => c.resourceId === 4);",
+                  "pm.test('Sigue en ₡60 000', () => pm.expect(cabin.pricePerNight).to.eql(60000));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CA-3 - Reservas existentes sin cambios",
+      "item": [
+        {
+          "name": "CA-3a - Cotizar extensión de la reserva R (anterior a la nueva tarifa)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "R fue registrada a ₡55 000; su total registrado (₡110 000) debe seguir igual.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings/{{bookingR}}/extension-quote?newCheckOutDate=2027-04-04",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings",
+                "{{bookingR}}",
+                "extension-quote"
+              ],
+              "query": [
+                {
+                  "key": "newCheckOutDate",
+                  "value": "2027-04-04"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const a = pm.response.json().data.amounts;",
+                  "pm.test('Lo ya registrado no cambia; lo nuevo usa la tarifa vigente', () => {",
+                  "  pm.expect(a.previousTotal).to.eql(110000);",
+                  "  pm.expect(a.nightlyRate).to.eql(60000);",
+                  "  pm.expect(a.extensionAmount).to.eql(60000);",
+                  "  pm.expect(a.newTotal).to.eql(170000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CA-3b - Registrar una reserva NUEVA con la tarifa vigente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Reserva de 2 noches creada DESPUÉS del cambio de tarifa.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabin-bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabin-bookings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 4,\n  \"guestName\": \"Camila Soto Vega\",\n  \"guestIdentification\": \"901230009\",\n  \"guestPhone\": \"80001111\",\n  \"guestEmail\": \"camila.soto@example.com\",\n  \"checkInDate\": \"2027-04-10\",\n  \"checkOutDate\": \"2027-04-12\",\n  \"companions\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('La reserva nueva usa ₡60 000 por noche', () => {",
+                  "  pm.expect(d.cabin.pricePerNight).to.eql(60000);",
+                  "  pm.expect(d.totalAmount).to.eql(120000);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Restaurar",
+      "item": [
+        {
+          "name": "Restaurar - Tarifa de la Cabina 2 a ₡55 000",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "No es evidencia de ningún CA: deja la tarifa como en el seeder.",
+            "url": {
+              "raw": "{{baseUrl}}/api/cabins/4/rate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "cabins",
+                "4",
+                "rate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pricePerNight\": 55000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

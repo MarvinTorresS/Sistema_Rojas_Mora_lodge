@@ -1,0 +1,249 @@
+{
+  "info": {
+    "name": "HU-001 - Registrar reserva de cancha sintetica (prueba funcional)",
+    "description": "Prueba funcional de HU-001 (Rojas Mora Sports & Lodge). Ejecuta las peticiones EN ORDEN dentro de la carpeta: cada caso depende de datos creados por el caso anterior (la reserva real de CA-1 se reutiliza para forzar el conflicto de CA-2, y la reserva de salon de CA-5a se reutiliza para forzar el conflicto de CA-5b). Requiere: docker compose up (MySQL), pnpm run migrate, pnpm run seed, pnpm run dev (backend en http://localhost:4000).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "HU-001 - Registrar reserva de cancha",
+      "item": [
+        {
+          "name": "CA-1 - Registro exitoso",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Ancla el caso 2 dias en el futuro y a una hora aleatoria (8am-8pm)",
+                  "// para que correr la coleccion varias veces el mismo dia no choque",
+                  "// consigo misma (CA-1 crearia dos reservas en el mismo horario).",
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 2);",
+                  "const hour = 8 + Math.floor(Math.random() * 10);",
+                  "d.setHours(hour, 0, 0, 0);",
+                  "const start = new Date(d);",
+                  "const end = new Date(d.getTime() + 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('ca1_start', start.toISOString());",
+                  "pm.collectionVariables.set('ca1_end', end.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('status = active y originChannel = staff', () => {",
+                  "  pm.expect(body.data.status).to.eql('active');",
+                  "  pm.expect(body.data.originChannel).to.eql('staff');",
+                  "  pm.expect(body.data.resourceId).to.eql(1);",
+                  "});",
+                  "// Guarda el horario REAL que quedo registrado, para que CA-2",
+                  "// lo reutilice exacto (garantiza el solapamiento, sin adivinar).",
+                  "pm.collectionVariables.set('ca1_booking_id', body.data.bookingId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 1,\n  \"customerName\": \"Luis Vargas Mora\",\n  \"customerPhone\": \"88887777\",\n  \"startDatetime\": \"{{ca1_start}}\",\n  \"endDatetime\": \"{{ca1_end}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/field-bookings", "host": [ "{{baseUrl}}" ], "path": [ "api", "field-bookings" ] }
+          }
+        },
+        {
+          "name": "CA-2 - Conflicto de horario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Mensaje de conflicto de la cancha', () => {",
+                  "  pm.expect(pm.response.json().error.message).to.eql('Ya existe una reserva en ese horario para esta cancha.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 1,\n  \"customerName\": \"Ana Jimenez Solano\",\n  \"customerPhone\": \"88886666\",\n  \"startDatetime\": \"{{ca1_start}}\",\n  \"endDatetime\": \"{{ca1_end}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/field-bookings", "host": [ "{{baseUrl}}" ], "path": [ "api", "field-bookings" ] },
+            "description": "Mismo resourceId y EXACTAMENTE el mismo horario que CA-1 (variables ca1_start/ca1_end), pero con otro cliente -- confirma que el conflicto lo genera el horario de la cancha, no el cliente (eso es CA-5)."
+          }
+        },
+        {
+          "name": "CA-3 - Campos obligatorios incompletos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "const body = pm.response.json();",
+                  "pm.test('Detalla los campos faltantes', () => {",
+                  "  const fields = body.error.details.map((d) => d.field);",
+                  "  pm.expect(fields).to.include.members(['customerPhone', 'startDatetime', 'endDatetime']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 1,\n  \"customerName\": \"Carlos Fernandez\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/field-bookings", "host": [ "{{baseUrl}}" ], "path": [ "api", "field-bookings" ] },
+            "description": "Faltan customerPhone, startDatetime y endDatetime a proposito."
+          }
+        },
+        {
+          "name": "CA-4 - Reserva con demasiada anticipacion",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// MAX_ADVANCE_BOOKING_DAYS = 30 en reservasCancha.service.js.",
+                  "// Se usa 45 dias (bien por encima del limite) para que el caso",
+                  "// no dependa de calcular el limite exacto al minuto.",
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 45);",
+                  "d.setHours(10, 0, 0, 0);",
+                  "const start = new Date(d);",
+                  "const end = new Date(d.getTime() + 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('ca4_start', start.toISOString());",
+                  "pm.collectionVariables.set('ca4_end', end.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('Mensaje de limite de anticipacion', () => {",
+                  "  pm.expect(pm.response.json().error.message).to.include('mas de 30 dias de anticipacion');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 1,\n  \"customerName\": \"Maria Rodriguez\",\n  \"customerPhone\": \"88885555\",\n  \"startDatetime\": \"{{ca4_start}}\",\n  \"endDatetime\": \"{{ca4_end}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/field-bookings", "host": [ "{{baseUrl}}" ], "path": [ "api", "field-bookings" ] }
+          }
+        },
+        {
+          "name": "CA-5a - Preparar reserva de salon del mismo cliente (HU-013)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date();",
+                  "d.setDate(d.getDate() + 3);",
+                  "d.setHours(14, 0, 0, 0);",
+                  "const start = new Date(d);",
+                  "const end = new Date(d.getTime() + 6 * 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('ca5_hall_start', start.toISOString());",
+                  "pm.collectionVariables.set('ca5_hall_end', end.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 (reserva de salon creada)', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 2,\n  \"planId\": 1,\n  \"customerName\": \"Jorge Castro Vindas\",\n  \"customerPhone\": \"88884444\",\n  \"startDatetime\": \"{{ca5_hall_start}}\",\n  \"endDatetime\": \"{{ca5_hall_end}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/hall-bookings", "host": [ "{{baseUrl}}" ], "path": [ "api", "hall-bookings" ] },
+            "description": "Paso previo de arreglo (arrange), NO es el caso bajo prueba: usa el endpoint YA IMPLEMENTADO de HU-013 para dejar a este cliente con una reserva de salon vigente, tal como pasaria en el negocio real. CA-5 de HU-001 se prueba en la siguiente peticion (CA-5b)."
+          }
+        },
+        {
+          "name": "CA-5b - Reserva de cancha que se cruza con otra reserva del mismo cliente",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Arranca 1h despues de que inicia la reserva de salon (14:00) y",
+                  "// termina dentro de la ventana del salon (14:00-20:00) -> se cruzan.",
+                  "const hallStart = new Date(pm.collectionVariables.get('ca5_hall_start'));",
+                  "const start = new Date(hallStart.getTime() + 60 * 60 * 1000);",
+                  "const end = new Date(start.getTime() + 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('ca5_field_start', start.toISOString());",
+                  "pm.collectionVariables.set('ca5_field_end', end.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('Mensaje de reserva cruzada del mismo cliente', () => {",
+                  "  pm.expect(pm.response.json().error.message).to.eql('Este cliente ya tiene otra reserva que se cruza con ese horario.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resourceId\": 1,\n  \"customerName\": \"Jorge Castro Vindas\",\n  \"customerPhone\": \"88884444\",\n  \"startDatetime\": \"{{ca5_field_start}}\",\n  \"endDatetime\": \"{{ca5_field_end}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/field-bookings", "host": [ "{{baseUrl}}" ], "path": [ "api", "field-bookings" ] },
+            "description": "Mismo customerPhone que CA-5a (identifica al mismo Customer), otro recurso (cancha en vez de salon), horario que se solapa con la reserva de salon ya creada. Esto es lo que prueba especificamente CA-5: el chequeo de cruce es por CLIENTE, sin importar el recurso."
+          }
+        }
+      ]
+    }
+  ]
+}
